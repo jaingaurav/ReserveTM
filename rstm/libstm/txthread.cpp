@@ -17,6 +17,45 @@
 #include "algs/algs.hpp"
 #include "inst.hpp"
 
+extern "C" void stmreserve01( int bitmask,
+    uintptr_t addr0
+    )
+{
+    stm::TxThread* tx = (stm::TxThread*)stm::Self;
+    tx->reserve01(bitmask, addr0);
+}
+
+extern "C" void stmreserve02( int bitmask,
+    uintptr_t addr0,
+    uintptr_t addr1
+    )
+{
+    stm::TxThread* tx = (stm::TxThread*)stm::Self;
+    tx->reserve02(bitmask, addr0, addr1);
+}
+
+extern "C" void stmreserve03( int bitmask,
+    uintptr_t addr0,
+    uintptr_t addr1,
+    uintptr_t addr2
+    )
+{
+    stm::TxThread* tx = (stm::TxThread*)stm::Self;
+    tx->reserve03(bitmask, addr0, addr1, addr2);
+}
+
+extern "C" void stmreserve04( int bitmask,
+    uintptr_t addr0,
+    uintptr_t addr1,
+    uintptr_t addr2,
+    uintptr_t addr3
+    )
+{
+    stm::TxThread* tx = (stm::TxThread*)stm::Self;
+    tx->reserve04(bitmask, addr0, addr1, addr2, addr3);
+}
+
+
 using namespace stm;
 
 namespace
@@ -63,7 +102,23 @@ namespace stm
       : nesting_depth(0),
         allocator(),
         num_commits(0), num_aborts(0), num_restarts(0),
-        num_ro(0), scope(NULL),
+        num_ro(0),
+        
+        num_reserved_calls(0),
+      num_reserved_reads(0),
+     num_reserved_writes(0),
+     num_non_reserved_reads(0),
+     num_non_reserved_writes(0),
+     num_redundant_reserved_reads(0),
+     num_redundant_reserved_reads_from_writes(0),
+     num_redundant_reserved_writes(0),
+     num_redundant_non_reserved_reads(0),
+     num_redundant_non_reserved_writes(0),
+     num_duplicate_non_reserved_reads(0),
+     num_duplicate_non_reserved_writes(0),
+      num_writer_stalls(0),
+        num_writer_stall_loops(0),
+        scope(NULL),
         start_time(0), tmlHasLock(false), undo_log(64), vlist(64), writes(64),
         r_orecs(64), locks(64),
         wf((filter_t*)FILTER_ALLOC(sizeof(filter_t))),
@@ -197,6 +252,60 @@ namespace stm
   }
 
 
+void begin(TxThread* tx, scope_t* s, uint32_t /*abort_flags*/)
+  {
+      if (++tx->nesting_depth > 1)
+          return;
+
+      // we must ensure that the write of the transaction's scope occurs
+      // *before* the read of the begin function pointer.  On modern x86, a
+      // CAS is faster than using WBR or xchg to achieve the ordering.  On
+      // SPARC, WBR is best.
+#ifdef STM_CPU_SPARC
+      tx->scope = s; WBR;
+#else
+      // NB: this CAS fails on a transaction restart... is that too expensive?
+      casptr((volatile uintptr_t*)&tx->scope, (uintptr_t)0, (uintptr_t)s);
+#endif
+
+      // some adaptivity mechanisms need to know nontransactional and
+      // transactional time.  This code suffices, because it gets the time
+      // between transactions.  If we need the time for a single transaction,
+      // we can run ProfileTM
+      if (tx->end_txn_time)
+          tx->total_nontxn_time += (tick() - tx->end_txn_time);
+
+      // now call the per-algorithm begin function
+      TxThread::tmbegin(tx);
+  }
+
+  void commit(TxThread* tx)
+  {
+      // don't commit anything if we're nested... just exit this scope
+      if (--tx->nesting_depth)
+          return;
+
+      // dispatch to the appropriate end function
+#ifdef STM_PROTECT_STACK
+      void* top_of_stack;
+      tx->commit(&top_of_stack);
+#else
+      tx->commit();
+#endif
+
+      // zero scope (to indicate "not in tx")
+      CFENCE;
+      tx->scope = NULL;
+
+      // record start of nontransactional time
+      tx->end_txn_time = tick();
+  }
+
+  void* tx_alloc(size_t size) { return Self->allocator.txAlloc(size); }
+
+  void tx_free(void* p) { Self->allocator.txFree(p); }
+  
+  
   /**
    *  When the transactional system gets shut down, we call this to dump stats
    */
@@ -216,6 +325,21 @@ namespace stm
                     << "; RO Commits: " << threads[i]->num_ro
                     << "; Aborts: "     << threads[i]->num_aborts
                     << "; Restarts: "   << threads[i]->num_restarts
+                    << std::endl;
+          std::cout << "rc: "       << threads[i]->num_reserved_calls
+              << "; rr: "       << threads[i]->num_reserved_reads      
+              << "; rw: " << threads[i]->num_reserved_writes
+                    << "; nrr: " << threads[i]->num_non_reserved_reads
+                    << "; nrw: "     << threads[i]->num_non_reserved_writes
+                    << "; rrr: "       << threads[i]->num_redundant_reserved_reads
+                    << "; rrr(fw): "       << threads[i]->num_redundant_reserved_reads_from_writes
+                    << "; rrw: " << threads[i]->num_redundant_reserved_writes
+                    << "; rnrr: " << threads[i]->num_redundant_non_reserved_reads
+                    << "; rnrw: "     << threads[i]->num_redundant_non_reserved_writes
+                    << "; dnrr: " << threads[i]->num_duplicate_non_reserved_reads
+                    << "; dnrw: "     << threads[i]->num_duplicate_non_reserved_writes
+                    << "; nws: " << threads[i]->num_writer_stalls
+                    << "; nwsl: " << threads[i]->num_writer_stall_loops
                     << std::endl;
           threads[i]->abort_hist.dump();
           rw_txns += threads[i]->num_commits;

@@ -77,14 +77,14 @@ namespace stm
       TM_INLINE
       static T read(T* addr, TxThread* thread)
       {
-          return (T)(uintptr_t)thread->tmread(thread, (void**)addr
+          return (T)(uintptr_t)thread->read((void**)addr
                                               STM_MASK(~0x0));
       }
 
       TM_INLINE
       static void write(T* addr, T val, TxThread* thread)
       {
-          thread->tmwrite(thread, (void**)addr, (void*)(uintptr_t)val
+          thread->write((void**)addr, (void*)(uintptr_t)val
                           STM_MASK(~0x0));
       }
   };
@@ -97,7 +97,7 @@ namespace stm
       static float read(float* addr, TxThread* thread)
       {
           union { float f;  void* v;  } v;
-          v.v = thread->tmread(thread, (void**)addr STM_MASK(~0x0));
+          v.v = thread->read((void**)addr STM_MASK(~0x0));
           return v.f;
       }
 
@@ -106,7 +106,7 @@ namespace stm
       {
           union { float f;  void* v;  } v;
           v.f = val;
-          thread->tmwrite(thread, (void**)addr, v.v STM_MASK(~0x0));
+          thread->write((void**)addr, v.v STM_MASK(~0x0));
       }
   };
 
@@ -118,7 +118,7 @@ namespace stm
       static float read(const float* addr, TxThread* thread)
       {
           union { float f;  void* v;  } v;
-          v.v = thread->tmread(thread, (void**)addr STM_MASK(~0x0));
+          v.v = thread->read((void**)addr STM_MASK(~0x0));
           return v.f;
       }
 
@@ -143,8 +143,8 @@ namespace stm
               struct { void* v1; void* v2; } v;
           } v;
           // read the two words
-          v.v.v1 = thread->tmread(thread, (void**)addr STM_MASK(~0x0));
-          v.v.v2 = thread->tmread(thread, addr2 STM_MASK(~0x0));
+          v.v.v1 = thread->read((void**)addr STM_MASK(~0x0));
+          v.v.v2 = thread->read(addr2 STM_MASK(~0x0));
           return (T)v.l;
       }
 
@@ -161,8 +161,8 @@ namespace stm
           } v;
           v.t = val;
           // write the two words
-          thread->tmwrite(thread, addr1, v.v.v1 STM_MASK(~0x0));
-          thread->tmwrite(thread, addr2, v.v.v2 STM_MASK(~0x0));
+          thread->write(addr1, v.v.v1 STM_MASK(~0x0));
+          thread->write(addr2, v.v.v2 STM_MASK(~0x0));
       }
   };
 
@@ -183,8 +183,8 @@ namespace stm
               struct { void* v1; void* v2; } v;
           } v;
           // read the two words
-          v.v.v1 = thread->tmread(thread, (void**)addr STM_MASK(~0x0));
-          v.v.v2 = thread->tmread(thread, addr2 STM_MASK(~0x0));
+          v.v.v1 = thread->read((void**)addr STM_MASK(~0x0));
+          v.v.v2 = thread->read(addr2 STM_MASK(~0x0));
           return v.t;
       }
 
@@ -201,8 +201,8 @@ namespace stm
           } v;
           v.t = val;
           // write the two words
-          thread->tmwrite(thread, addr1, v.v.v1 STM_MASK(~0x0));
-          thread->tmwrite(thread, addr2, v.v.v2 STM_MASK(~0x0));
+          thread->write(addr1, v.v.v1 STM_MASK(~0x0));
+          thread->write(addr2, v.v.v2 STM_MASK(~0x0));
       }
   };
 
@@ -220,8 +220,8 @@ namespace stm
               struct { void* v1; void* v2; } v;
           } v;
           // read the two words
-          v.v.v1 = thread->tmread(thread, (void**)addr STM_MASK(~0x0));
-          v.v.v2 = thread->tmread(thread, addr2 STM_MASK(~0x0));
+          v.v.v1 = thread->read((void**)addr STM_MASK(~0x0));
+          v.v.v2 = thread->read(addr2 STM_MASK(~0x0));
           return v.t;
       }
 
@@ -252,7 +252,7 @@ namespace stm
           union { char v[4]; void* v2; } v;
           void** a = (void**)(((long)addr) & ~3);
           long offset = ((long)addr) & 3;
-          v.v2 = thread->tmread(thread, a STM_MASK(0xFF << (8 * offset)));
+          v.v2 = thread->read(a STM_MASK(0xFF << (8 * offset)));
           return (T)v.v[offset];
       }
 
@@ -265,9 +265,9 @@ namespace stm
           void** a = (void**)(((long)addr) & ~3);
           long offset = ((long)addr) & 3;
           // read the enclosing word
-          v.v2 = thread->tmread(thread, a STM_MASK(0xFF << (8 * offset)));
+          v.v2 = thread->read(a STM_MASK(0xFF << (8 * offset)));
           v.v[offset] = val;
-          thread->tmwrite(thread, a, v.v2 STM_MASK(0xFF << (8 * offset)));
+          thread->write(a, v.v2 STM_MASK(0xFF << (8 * offset)));
       }
   };
 
@@ -279,14 +279,14 @@ namespace stm
       TM_INLINE
       static T read(T* addr, TxThread* thread)
       {
-          return (T)(uintptr_t)thread->tmread(thread, (void**)addr
+          return (T)(uintptr_t)thread->read((void**)addr
                                               STM_MASK(~0x0));
       }
 
       TM_INLINE
       static void write(T* addr, T val, TxThread* thread)
       {
-          thread->tmwrite(thread, (void**)addr, (void*)(uintptr_t)val
+          thread->write((void**)addr, (void*)(uintptr_t)val
                           STM_MASK(~0x0));
       }
   };
@@ -299,7 +299,7 @@ namespace stm
       static double read(double* addr, TxThread* thread)
       {
           union { double d;  void*  v; } v;
-          v.v = thread->tmread(thread, (void**)addr STM_MASK(~0x0));
+          v.v = thread->read((void**)addr STM_MASK(~0x0));
           return v.d;
       }
 
@@ -308,7 +308,7 @@ namespace stm
       {
           union { double d;  void*  v; } v;
           v.d = val;
-          thread->tmwrite(thread, (void**)addr, v.v STM_MASK(~0x0));
+          thread->write((void**)addr, v.v STM_MASK(~0x0));
       }
   };
 
@@ -320,7 +320,7 @@ namespace stm
       static double read(const double* addr, TxThread* thread)
       {
           union { double d;  void*  v; } v;
-          v.v = thread->tmread(thread, (void**)addr STM_MASK(~0x0));
+          v.v = thread->read((void**)addr STM_MASK(~0x0));
           return v.d;
       }
 
@@ -345,8 +345,8 @@ namespace stm
               struct { void* v1; void* v2; } v;
           } v;
           // read the two words
-          v.v.v1 = thread->tmread(thread, (void**)addr STM_MASK(~0x0));
-          v.v.v2 = thread->tmread(thread, addr2 STM_MASK(~0x0));
+          v.v.v1 = thread->read((void**)addr STM_MASK(~0x0));
+          v.v.v2 = thread->read(addr2 STM_MASK(~0x0));
           return v.t;
       }
 
@@ -363,8 +363,8 @@ namespace stm
           } v;
           v.t = val;
           // write the two words
-          thread->tmwrite(thread, addr1, v.v.v1 STM_MASK(~0x0));
-          thread->tmwrite(thread, addr2, v.v.v2 STM_MASK(~0x0));
+          thread->write(addr1, v.v.v1 STM_MASK(~0x0));
+          thread->write(addr2, v.v.v2 STM_MASK(~0x0));
       }
   };
 
@@ -393,7 +393,7 @@ namespace stm
           union { int v[2]; void* v2; } v;
           void** a = (void**)(((intptr_t)addr) & ~7ul);
           long offset = (((intptr_t)addr)>>2)&1;
-          v.v2 = thread->tmread(thread, a
+          v.v2 = thread->read(a
                                 STM_MASK(0xffffffff << (32 * offset)));
           return (T)v.v[offset];
       }
@@ -407,10 +407,10 @@ namespace stm
           void** a = (void**)(((intptr_t)addr) & ~7ul);
           int offset = (((intptr_t)addr)>>2) & 1;
           // read the enclosing word
-          v.v2 = thread->tmread(thread, a
+          v.v2 = thread->read(a
                                 STM_MASK(0xffffffff << (32 * offset)));
           v.v[offset] = val;
-          thread->tmwrite(thread, a, v.v2
+          thread->write(a, v.v2
                           STM_MASK(0xffffffff << (32 * offset)));
       }
   };
@@ -426,7 +426,7 @@ namespace stm
           union { float v[2]; void* v2; } v;
           void** a = (void**)(((intptr_t)addr)&~7ul);
           long offset = (((intptr_t)addr)>>2)&1;
-          v.v2 = thread->tmread(thread, a
+          v.v2 = thread->read(a
                                 STM_MASK(0xffffffff << (32 * offset)));
           return v.v[offset];
       }
@@ -439,10 +439,10 @@ namespace stm
           void**a = (void**)(((intptr_t)addr) & ~7ul);
           int offset = (((intptr_t)addr)>>2) & 1;
           // read enclosing word
-          v.v2 = thread->tmread(thread, a
+          v.v2 = thread->read(a
                                 STM_MASK(0xffffffff << (32 * offset)));
           v.v[offset] = val;
-          thread->tmwrite(thread, a, v.v2
+          thread->write(a, v.v2
                           STM_MASK(0xffffffff << (32 * offset)));
       }
   };
@@ -458,7 +458,7 @@ namespace stm
           union { float v[2]; void* v2; } v;
           void** a = (void**)(((intptr_t)addr)&~7ul);
           long offset = (((intptr_t)addr)>>2)&1;
-          v.v2 = thread->tmread(thread, a
+          v.v2 = thread->read(a
                                 STM_MASK(0xffffffff << (32 * offset)));
           return v.v[offset];
       }
@@ -483,7 +483,7 @@ namespace stm
           union { char v[8]; void* v2; } v;
           void** a = (void**)(((long)addr) & ~7);
           long offset = ((long)addr) & 7;
-          v.v2 = thread->tmread(thread, a
+          v.v2 = thread->read(a
                                 STM_MASK(0xffffffff << (8 * offset)));
           return (T)v.v[offset];
       }
@@ -497,10 +497,10 @@ namespace stm
           void** a = (void**)(((long)addr) & ~7);
           long offset = ((long)addr) & 7;
           // read the enclosing word
-          v.v2 = thread->tmread(thread, a
+          v.v2 = thread->read(a
                                 STM_MASK(0xffffffff << (8 * offset)));
           v.v[offset] = val;
-          thread->tmwrite(thread, a, v.v2
+          thread->write(a, v.v2
                           STM_MASK(0xffffffff << (8 * offset)));
       }
   };

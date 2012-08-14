@@ -70,6 +70,7 @@ namespace stm
    *  detection in our STM systems
    */
   extern pad_word_t    timestamp;
+  extern pad_word_t    num_active_readers;
   extern orec_t        orecs[NUM_STRIPES];             // set of orecs
   extern pad_word_t    last_init;                      // last logical commit
   extern pad_word_t    last_complete;                  // last physical commit
@@ -108,6 +109,10 @@ namespace stm
       void  (*TM_FASTCALL commit)(STM_COMMIT_SIG(,));
       void* (*TM_FASTCALL read)  (STM_READ_SIG(,,));
       void  (*TM_FASTCALL write) (STM_WRITE_SIG(,,,));
+      void  (*TM_FASTCALL reserve01)(TxThread* tx, int bitmask, uintptr_t addr0);
+      void  (*TM_FASTCALL reserve02)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1);
+      void  (*TM_FASTCALL reserve03)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2);
+      void  (*TM_FASTCALL reserve04)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3);
 
       /**
        * rolls the transaction back without unwinding, returns the scope (which
@@ -244,9 +249,7 @@ namespace stm
       tx->abort_hist.onCommit(tx->consec_aborts);
       tx->consec_aborts = 0;
       ++tx->num_commits;
-      tx->tmread = read_ro;
-      tx->tmwrite = write_ro;
-      tx->tmcommit = commit_ro;
+      tx->setReadWriteCommit(read_ro, write_ro, commit_ro);
       Trigger::onCommitSTM(tx);
   }
 
@@ -285,9 +288,7 @@ namespace stm
   inline void OnFirstWrite(TxThread* tx, ReadBarrier read_rw,
                            WriteBarrier write_rw, CommitBarrier commit_rw)
   {
-      tx->tmread = read_rw;
-      tx->tmwrite = write_rw;
-      tx->tmcommit = commit_rw;
+      tx->setReadWriteCommit(read_rw, write_rw, commit_rw);
   }
 
   inline void PreRollback(TxThread* tx)
@@ -301,9 +302,7 @@ namespace stm
   {
       tx->allocator.onTxAbort();
       tx->nesting_depth = 0;
-      tx->tmread = read_ro;
-      tx->tmwrite = write_ro;
-      tx->tmcommit = commit_ro;
+      tx->setReadWriteCommit(read_ro, write_ro, commit_ro);
       Trigger::onAbort(tx);
       scope_t* scope = tx->scope;
       tx->scope = NULL;
@@ -333,9 +332,7 @@ namespace stm
   {
       tx->allocator.onTxAbort();
       tx->nesting_depth = 0;
-      tx->tmread = r;
-      tx->tmwrite = w;
-      tx->tmcommit = c;
+      tx->setReadWriteCommit(r, w, c);
       scope_t* scope = tx->scope;
       tx->scope = NULL;
       return scope;
@@ -359,14 +356,12 @@ namespace stm
   inline void GoTurbo(TxThread* tx, ReadBarrier r, WriteBarrier w,
                       CommitBarrier c)
   {
-      tx->tmread = r;
-      tx->tmwrite = w;
-      tx->tmcommit = c;
+      tx->setReadWriteCommit(r, w, c);
   }
 
   inline bool CheckTurboMode(TxThread* tx, ReadBarrier read_turbo)
   {
-      return (tx->tmread == read_turbo);
+      return tx->checkReadFunc(read_turbo);
   }
 
   /**
