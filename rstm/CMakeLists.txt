@@ -58,10 +58,10 @@ find_package(OpenMP)
 # try and add the LIBS_INIT to the CXXFLAGS. We deal with this by definining
 # another variable for the include-side
 #
-string(REGEX MATCH "-l" CMAKE_THREAD_LIBS_IS_LIB ${CMAKE_THREAD_LIBS_INIT})
-if (NOT CMAKE_THREAD_LIBS_IS_LIB)
-  set(CMAKE_THREAD_INCLUDE ${CMAKE_THREAD_LIBS_INIT})
-endif ()
+#string(REGEX MATCH "-l" CMAKE_THREAD_LIBS_IS_LIB ${CMAKE_THREAD_LIBS_INIT})
+#if (NOT CMAKE_THREAD_LIBS_IS_LIB)
+#  set(CMAKE_THREAD_INCLUDE ${CMAKE_THREAD_LIBS_INIT})
+#endif ()
 
 # Include all fo the relevant UserConfig modules.
 include (UserConfig.cmake)
