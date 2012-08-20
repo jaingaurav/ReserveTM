@@ -109,11 +109,10 @@ namespace ReserveTM {
             SUCCESS_INTRA_PROCEDURAL,
         };
 
-
-void willStoreValue(CallInst* ci, InstructionSet& visited);
-void willStoreValue(Instruction* instr, InstructionSet& visited);
-void willStoreValue(BasicBlock* block, InstructionSet& visited);
-void updatePreviousSitesWithStore(Instruction *instr, InstructionSet& visited,  bool skip = false, bool initial = false);
+        void willStoreValue(CallInst* ci, InstructionSet& visited);
+        void willStoreValue(Instruction* instr, InstructionSet& visited);
+        void willStoreValue(BasicBlock* block, InstructionSet& visited);
+        void updatePreviousSitesWithStore(Instruction *instr, InstructionSet& visited,  bool skip = false, bool initial = false);
 
         bool eliminateLoads(InstructionMap::const_iterator entry, ValueSet& cachedEliminations, ValueSet& cachedNonEliminations);
         bool willReserveValue(BasicBlock* block, ValueSet values, bool store, InstructionSet& visited );
@@ -125,11 +124,8 @@ void updatePreviousSitesWithStore(Instruction *instr, InstructionSet& visited,  
         void mergeValue(Instruction *instr, Value* v, bool store, std::queue<InstructionMap::const_iterator>& mergeQueue);
         CompressionResult canMergeValue(Instruction *instr, Value* v, InstructionSet& visited, bool initial = false);
         bool mergeBlock(InstructionMap::const_iterator entry, std::queue<InstructionMap::const_iterator>& mergeQueue);
-        void updateEscapability(Value *v, bool escapable);
-        bool insertAlias(Value *from, Value *to);
         std::multimap<Function *, CallInst *> fFunctionCallSites;
         std::set<CallInst*> fFunctionCalls;
-        BasicBlockSet fAllocBlocks;
         InstructionSet fFunctionPointerBlocks;
         BasicBlockSet fCompressedBlocks;
         std::queue<Function *> fFunctionPointerQueue;
@@ -394,10 +390,7 @@ bool ReserveTM::ReserveTMPass::analyzeFunction(Function * const function,
                             }
                         } else if (arg->getType()->isPointerTy()) {
                             if (called->getName().str().find("stm_read") != std::string::npos) {
-#if 1
                                 Instruction *newI = new LoadInst(arg, "newRead", true);
-                                //BasicBlock::iterator ii(ci);
-                                //ReplaceInstWithInst(ci->getParent()->getInstList(), ii, newI);
                                 ReplaceInstWithInst(ci, newI);
                                 ++num_loads_from_stm_call;
                                 instr_i = inst_begin(function);
@@ -405,16 +398,8 @@ bool ReserveTM::ReserveTMPass::analyzeFunction(Function * const function,
                                     ++instr_i;
                                 }
                                 continue;
-#else
-                                ++num_loads_from_stm_call;
-                                ++num_loads;
-                                ls->insertLoad(arg);
-#endif
                             } else if (called->getName().str().find("stm_write") != std::string::npos) {
-#if 1
                                 Instruction *newI = new StoreInst(ci->getArgOperand(1), arg, "newWrite", true);
-                                //BasicBlock::iterator ii(ci);
-                                //ReplaceInstWithInst(ci->getParent()->getInstList(), ii, newI);
                                 ReplaceInstWithInst(ci, newI);
                                 ++num_stores_from_stm_call;
                                 instr_i = inst_begin(function);
@@ -422,11 +407,6 @@ bool ReserveTM::ReserveTMPass::analyzeFunction(Function * const function,
                                     ++instr_i;
                                 }
                                 continue;
-#else
-                                ++num_stores;
-                                ++num_stores_from_stm_call;
-                                ls->insertStore(arg);
-#endif
                             } else if (called->getName().str().find("tx_free") != std::string::npos) {
                                 ++num_frees;
                                 ++num_frees_from_stm_call;
