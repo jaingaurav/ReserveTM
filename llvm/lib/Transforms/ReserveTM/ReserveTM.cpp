@@ -969,8 +969,6 @@ void ReserveTM::ReserveTMPass::willStoreValue(CallInst* ci, InstructionSet& visi
         //TODO: handle function pointers
         willStoreValue(&called->getEntryBlock(), visited);
     }
-
-    return false;
 }
 
 void ReserveTM::ReserveTMPass::willStoreValue(Instruction* instr, InstructionSet& visited) {
