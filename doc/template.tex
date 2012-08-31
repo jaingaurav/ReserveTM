@@ -1,0 +1,173 @@
+% TEMPLATE for Usenix papers, specifically to meet requirements of
+%  USENIX '05
+% originally a template for producing IEEE-format articles using LaTeX.
+%   written by Matthew Ward, CS Department, Worcester Polytechnic Institute.
+% adapted by David Beazley for his excellent SWIG paper in Proceedings,
+%   Tcl 96
+% turned into a smartass generic template by De Clarke, with thanks to
+%   both the above pioneers
+% use at your own risk.  Complaints to /dev/null.
+% make it two column with no page numbering, default is 10 point
+
+% Munged by Fred Douglis <douglis@research.att.com> 10/97 to separate
+% the .sty file from the LaTeX source template, so that people can
+% more easily include the .sty file into an existing document.  Also
+% changed to more closely follow the style guidelines as represented
+% by the Word sample file. 
+
+% Note that since 2010, USENIX does not require endnotes. If you want
+% foot of page notes, don't include the endnotes package in the 
+% usepackage command, below.
+
+% This version uses the latex2e styles, not the very ancient 2.09 stuff.
+\documentclass[letterpaper,twocolumn,10pt]{article}
+\usepackage{usenix,epsfig,endnotes}
+\begin{document}
+
+%don't want date printed
+\date{}
+
+%make title bold and 14 pt font (Latex default is non-bold, 16 pt)
+\title{\Large \bf CanTM: Reducing STM Instrumentation through memory reservations}
+
+%for single author (just remove % characters)
+\author{
+{\rm Gaurav Jain}\\
+University of Waterloo
+% copy the following lines to add more authors
+% \and
+% {\rm Name}\\
+%Name Institution
+} % end author
+
+\maketitle
+
+% Use the following at camera-ready time to suppress page numbers.
+% Comment it out when you first submit the paper for review.
+\thispagestyle{empty}
+
+
+\subsection*{Abstract}
+Software Transactional Memory helps abstract the intricate complexities of concurrent programming. Though many STM libraries exist, they require manual instrumentation for transactional loads and stores. This needs to be carefully and selectively crafted by application developers to avoid unnecessary calls to the STM library. This diminishes the appeal of STM. Compilers could automatically insert instrumentation and perform necessary optimizations. Improving compiler support is an open research topic. Current compiler-generated implementations perform poorly when compared to developer instrumented code.\\
+
+The following proposed technique extends the current API between compilers and STM libraries with\emph{memory reservations}. Static data flow analysis computes the list of memory addresses for each basic block. In addition, forward analysis is used to remove redundant memory reservations where the reservation has already been made by a predecessor block. These \emph{memory reservations} avoid the need to instrument every load and store instruction with a STM library call.\\
+
+\section{Approach}
+
+A compiler inserts TM instrumentation by identifying memory loads and stores to shared memory locations and accessing them through calls to \emph{stm\_read()} and \emph{stm\_write()} respectively. It is unaware of whether lazy or eager versioning is being used. This limits the scope of compiler optimizations possible as all loads and stores must be instrumented. Manually instrumented code can use domain-specific knowledge to reduce the number of library calls. For example, memory locations that are guaranteed to not change can be directly loaded.\\
+
+The following code listing illustrates a transaction represented by the function \emph{tx()}.
+
+{\tt \small
+\begin{verbatim}
+int a, b, c, d;int foo(int& x) {    return x+1;}int tx() {    a = 2;
+    if (d > 0) {        b = c;    } else {        a = foo(b);    }    return a + b;}
+\end{verbatim}
+}
+
+\noindent
+This listing would be instrumented as follows:
+
+{\tt \small
+\begin{verbatim}
+int a, b, c, d;
+int foo(int& x) {    return stm_read(&x)+1;}int tx() {    stm_write(&a, 2);
+    if (stm_read(&d) > 0) {        stm_write(&b, stm_read(&c));    } else {        stm_write(&a, foo(stm_read(&b));    }    return stm_read(&a) + stm_read(&b);}
+\end{verbatim}
+}
+
+\noindent
+The proposed approach replaces the calls to \emph{stm\_read()} and \emph{stm\_write()} with calls to \emph{stm\_reserve()}. \emph{stm\_reserve()} informs the STM library to prevent future conflicting transactions to proceed until the current transaction has either completed or aborted. Multiple memory addresses can be reserved in a single call, resulting in the following proposed transformation:
+
+{\tt \small
+\begin{verbatim}
+int a, b, c, d;int foo(int& x) {    stm_reserve(&x);    return x+1;}int tx() {    stm_reserve(&a, &d);    a = 2;
+    if (d > 0) {        stm_reserve(&b, &c);        b = c;    } else {        stm_reserve(&a, &b);        a = foo(b);    }
+    stm_reserve(&a, &b);    return a + b;}
+\end{verbatim}
+}
+
+\noindent
+Inter-procedural analysis can be used to remove reservation calls to redundant memory locations leading to the following simplification:
+
+{\tt \small
+\begin{verbatim}
+int a, b, c, d;int foo(int& x) {    return x+1;}int tx() {    stm_reserve(&a, &d, &b);    a = 2;
+    if (d > 0) {      stm_reserve(&c);      b = c;    } else {        a = foo(b);    }
+    return a + b;}
+\end{verbatim}
+}
+
+\noindent
+This instrumentation has the potential to considerably reduce the number of  calls to the STM library. In addition, since individual loads and stores are not transformed to function calls, the scope for compiler optimizations greatly increases.\\
+
+Another advantage is the ability to support transactional code without significantly increasing the code size of an executable. Current compilers instrument functions called within a transactional context by cloning the function. Thus an executable contains two versions of the same function, one for regular execution and the other for transactional contexts. The proposed approach is relatively lightweight, such that a single function can support both transactional and non transactional execution. This can be achieved through a flag check before calling \emph{stm\_reserve()}, the remaining code remains common.\\
+
+\section{Stages}
+
+The following items have have been completed.
+
+\begin{itemize}
+
+\item {\bf Analysis:} The initial analysis phase iterates through each t the Each basic block within a transactional context is analyzed to determine the load and store set for the block.
+
+\item {\bf Intra-procedural Analysis:} Forward analysis on basic blocks within the same function is done to to remove redundant reservation calls.
+
+\item {\bf Inter-procedural Analysis:} Similar to above, a prototype of inter-procedural analysis has been completed. This is currently not used due issues with Multiple Call Paths described in section 3.
+
+\item {\bf Escape analysis:} A basic notion of escape analysis has been implemented whereby only local variables which escape a function are instrumented. This effort has been greatly simplified with the \emph{mem2reg} LLVM pass.
+
+\item {\bf Library Integration:} \emph{stm\_reserve()} has been added to the API of the RSTM library and  transactional code can be compiled to make calls to the library. This includes various statistics used to analyze redundant \emph{stm\_reserve()} calls.
+
+\end{itemize}
+
+\section{New Items}
+
+The following outline new problems that were discovered during development:
+
+\begin{itemize}
+
+\item {\bf Defining Instance Ordering:} After transforming the LLVM IR to SSA form, it was observed that a basic block may have multiple fresh values defined. A \emph{stm\_reserve()} can only be inserted after a value has been defined. Thus in order to avoid multiple \emph{stm\_reserve()} calls within a single basic block, fresh values need to be reordered to be seen as early on as possible.
+
+\item  {\bf Object Offsets:} In order to eliminate redundant reservation calls, alias analysis must be ``offset aware'' in order handle objects elements. This is needed due to functions usually only passing the object pointer via the parameters. The LLVM GetElementPtr instruction should be able to assist this analysis.
+
+\item  {\bf Function pointers:} Only functions that are called within a transaction scope need to be instrumented. However if a function is called via a function pointer this may cause problems. The solution is that all functions whose reference is taken need to be instrumented. However this cannot be done through function cloning. As described earlier, this is achievable through the use of a transactional context flag.
+
+\item  {\bf Multiple Call Paths:} In the initial code sample the function {\tt foo()} was only called from within the {\tt tx()} transaction. Since {\tt foo()} was called with {\tt b} and {\tt b} had already been reserved in the previous calling context, there was no need to reserve it in {\tt foo()}. However this is not valid in the following code listing:
+
+{\tt \small
+\begin{verbatim}
+int a, b, c, d;int foo(int& x) {    return x+1;}int tx_1() {
+    a = b;
+    c = foo(b);
+    return c;}
+
+int tx_2() {
+    return foo(d);}
+\end{verbatim}
+}
+
+Here {\tt tx\_1()} and {\tt tx\_2()} are two distinct transactions that both make a call to {\tt foo()}. While {\tt tx\_1()} has already done a load to reserve the parameter to {\tt foo()} with the statement {\tt a = b}, this is not the case with {\tt tx\_2()}.\\
+
+Two means to resolve this issue is either to clone the function for different calling contexts, or analyze for the lowest common denominator, i.e. for the least number of previous reservations. For the scope of this project, the latter approach will be taken.\\
+
+\end{itemize}
+
+The priority of the above new problems will be determined by results from the redundant memory reservation statistics collected. At the moment support for Object Offsets seems to be the most pressing.
+
+\section{Availability}
+
+Code for the project can be found at:
+
+\begin{center}
+{\tt https://github.com/jaingaurav/CanTM}\\
+\end{center}
+
+\end{document}
+
+
+
+
+
+
+
