@@ -41,6 +41,10 @@ namespace {
       static TM_FASTCALL void write_rw(STM_WRITE_SIG(,,,));
       static TM_FASTCALL void commit_ro(STM_COMMIT_SIG(,));
       static TM_FASTCALL void commit_rw(STM_COMMIT_SIG(,));
+      static TM_FASTCALL void reserve01(TxThread* tx, int bitmask, uintptr_t addr0);
+      static TM_FASTCALL void reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1);
+      static TM_FASTCALL void reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2);
+      static TM_FASTCALL void reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3);
 
       static stm::scope_t* rollback(STM_ROLLBACK_SIG(,,,));
       static bool irrevoc(STM_IRREVOC_SIG(,));
@@ -248,6 +252,96 @@ namespace {
       STM_DO_MASKED_WRITE(addr, val, mask);
   }
 
+  
+  void
+  ByteEager::reserve01(TxThread* tx, int bitmask, uintptr_t addr0)
+  {
+      uint32_t tries = 0;
+      bytelock_t* lock = get_bytelock((void **)addr0);
+
+      if (!(bitmask & 1)) {
+          // do I have the write lock?
+          if (lock->owner == tx->id)
+              return;
+
+          // do I have a read lock?
+          if (lock->reader[tx->id-1] == 1)
+              return;
+
+          // log this location
+          tx->r_bytelocks.insert(lock);
+
+          // now try to get a read lock
+          while (true) {
+              // mark my reader byte
+              lock->set_read_byte(tx->id-1);
+
+              // if nobody has the write lock, we're done
+              if (__builtin_expect(lock->owner == 0, true))
+                  return;
+
+              // drop read lock, wait (with timeout) for lock release
+              lock->reader[tx->id-1] = 0;
+              while (lock->owner != 0) {
+                  if (++tries > READ_TIMEOUT)
+                      tx->tmabort(tx);
+              }
+          }
+      } else {
+          // If I have the write lock, add to undo log, do write, return
+          if (lock->owner == tx->id) {
+              tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY((void **)addr0, *((void **)addr0), mask)));
+              return;
+          }
+
+          // get the write lock, with timeout
+          while (!bcas32(&(lock->owner), 0u, tx->id))
+              if (++tries > ACQUIRE_TIMEOUT)
+                  tx->tmabort(tx);
+
+          // log the lock, drop any read locks I have
+          tx->w_bytelocks.insert(lock);
+          lock->reader[tx->id-1] = 0;
+
+          // wait (with timeout) for readers to drain out
+          // (read 4 bytelocks at a time)
+          volatile uint32_t* lock_alias = (volatile uint32_t*)&lock->reader[0];
+          for (int i = 0; i < 15; ++i) {
+              tries = 0;
+              while (lock_alias[i] != 0)
+                  if (++tries > DRAIN_TIMEOUT)
+                      tx->tmabort(tx);
+          }
+
+          // add to undo log, do in-place write
+          tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY((void **)addr0, *((void **)addr0), mask)));
+      OnFirstWrite(tx, read_rw, write_rw, commit_rw);
+      
+      }
+  }
+
+  
+  void
+  ByteEager::reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1)
+  {
+      reserve01(tx, bitmask, addr0);
+      reserve01(tx, bitmask>>1, addr1);
+  }
+
+  void
+  ByteEager::reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2)
+  {
+      reserve02(tx, bitmask, addr0, addr1);
+      reserve01(tx, bitmask>>2, addr2);
+  }
+  
+  void
+  ByteEager::reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3)
+  {
+      reserve03(tx, bitmask, addr0, addr1, addr2);
+      reserve01(tx, bitmask>>3, addr3);
+  }
+
   /**
    *  ByteEager unwinder:
    */
@@ -307,6 +401,10 @@ namespace stm {
       stms[ByteEager].commit    = ::ByteEager::commit_ro;
       stms[ByteEager].read      = ::ByteEager::read_ro;
       stms[ByteEager].write     = ::ByteEager::write_ro;
+      stms[ByteEager].reserve01 = ::ByteEager::reserve01;
+      stms[ByteEager].reserve02 = ::ByteEager::reserve02;
+      stms[ByteEager].reserve03 = ::ByteEager::reserve03;
+      stms[ByteEager].reserve04 = ::ByteEager::reserve04;
       stms[ByteEager].rollback  = ::ByteEager::rollback;
       stms[ByteEager].irrevoc   = ::ByteEager::irrevoc;
       stms[ByteEager].switcher  = ::ByteEager::onSwitchTo;
