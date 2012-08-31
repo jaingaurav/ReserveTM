@@ -384,11 +384,15 @@ bool ReserveTM::ReserveTMPass::analyzeFunction(Function * const function,
                         ls->insertAlloc(ci);
                     } else {
                         Value *arg = ci->getArgOperand(0);
-                        if (Constant *c = dyn_cast<Constant>(arg)) {
+                      /*  if (Constant *c = dyn_cast<Constant>(arg)) {
                             if (c->isNullValue()) {
                                 //continue;
                             }
-                        } else if (arg->getType()->isPointerTy()) {
+                            ++num_skipped_tm_calls;
+                        }
+		       	else if (arg->getType()->isPointerTy())
+			*/
+			{
                             if (called->getName().str().find("stm_read") != std::string::npos) {
                                 Instruction *newI = new LoadInst(arg, "newRead", true);
                                 ReplaceInstWithInst(ci, newI);
@@ -414,8 +418,8 @@ bool ReserveTM::ReserveTMPass::analyzeFunction(Function * const function,
                             } else {
                                 assert(false);
                             }
-                        } else {
-                            ++num_skipped_tm_calls;
+                        //} else {
+                          //  ++num_skipped_tm_calls;
                         }
                     }
                 } else {
