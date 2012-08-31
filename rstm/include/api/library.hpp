@@ -53,6 +53,7 @@
 #include <stm/config.h>
 #include <common/platform.hpp>
 #include <stm/txthread.hpp>
+#include <stm/lib_globals.hpp>
 
 namespace stm
 {
@@ -138,7 +139,7 @@ namespace stm
    *  We rely on the default setjmp/longjmp abort handling when using the
    *  library API.
    */
-  void sys_init(void (*abort_handler)(TxThread*) = NULL);
+  void sys_init(volatile AbortHandler conflict_abort);
 
   /**
    *  Shut down the library.  This just dumps some statistics.
@@ -163,7 +164,7 @@ namespace stm
   /**
    *  Try to become irrevocable.  Call this from within a transaction.
    */
-  bool become_irrevoc(STM_WHEN_PROTECT_STACK(void** top_of_stack));
+  void become_irrevoc(STM_WHEN_PROTECT_STACK(void** top_of_stack));
 
 #ifdef STM_PROTECT_STACK
 #   define TM_BECOME_IRREVOC() ({    \
@@ -240,7 +241,7 @@ namespace stm
 #define TM_WAIVER
 #define TM_CALLABLE
 
-#define TM_SYS_INIT()        stm::sys_init()
+#define TM_SYS_INIT()        stm::sys_init(NULL)
 #define TM_THREAD_INIT       stm::thread_init
 #define TM_THREAD_SHUTDOWN() stm::thread_shutdown()
 #define TM_SYS_SHUTDOWN      stm::sys_shutdown

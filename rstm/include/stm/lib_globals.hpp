@@ -23,7 +23,7 @@
 namespace stm
 {
   struct TxThread;
-  NORETURN typedef void (*AbortHandler)(TxThread*);
+  typedef void (*AbortHandler)(TxThread*);
   void sys_init(AbortHandler conflict_abort);
   void set_policy(const char* phasename);
   void sys_shutdown();
