@@ -1,0 +1,196 @@
+@inproceedings{Dalessandro:2010:TML:1885276.1885279,
+author = {Dalessandro, Luke and Dice, Dave and Scott, Michael and Shavit, Nir and Spear, Michael},
+title = {{Transactional Mutex Locks}},
+booktitle = {16th International Euro-Par Conference on Parallel Processing: Part II},
+year = {2010},
+pages = {2--13},
+publisher = {Springer-Verlag},
+address = {Berlin, Heidelberg},
+isbn = {3-642-15290-2, 978-3-642-15290-0},
+read = {Yes},
+rating = {0},
+date-added = {2012-07-13T20:30:31GMT+00:00},
+date-modified = {2012-07-31T14:27:58GMT+00:00},
+abstract = {Mutual exclusion (mutex) locks limit concurrency but offer low single-thread latency. Software transactional memory (STM) typically has much higher latency, but scales well. We present transactional mutex locks (TML), which attempt to achieve the best of both worlds for read-dominated workloads. We also propose compiler optimizations that reduce the latency of TML to within a small fraction of mutex overheads.
+
+Our evaluation of TML, using microbenchmarks on the x86 and SPARC architectures, is promising. Using optimized spinlocks and the TL2 STM algorithm as baselines, we find that TML provides the low latency of locks at low thread levels, and the scalability of STM for read-dominated workloads. These results suggest that TML is a good reference implementation to use when evaluating STM algorithms, and that TML is a viable alternative to mutex locks for a variety of workloads.},
+url = {http://dl.acm.org/citation.cfm?id=1885276.1885279},
+local-url = {file://localhost/Users/gjain/Library/Application%20Support/Papers2/Files/Transactional%20Mutex%20Locks.pdf},
+uri = {\url{papers2://publication/uuid/9D8D9B25-E611-447B-8ADE-C54EA8B0FF7E}}
+}
+
+@inproceedings{Shpeisman:2007:EIO:1250734.1250744,
+author = {Shpeisman, Tatiana and Menon, Vijay and Adl-Tabatabai, Ali-Reza and Balensiefer, Steven and Grossman, Dan and Hudson, Richard L. and Moore, Katherine F. and Saha, Bratin},
+title = {{Enforcing Isolation and Ordering in STM}},
+booktitle = {Proceedings of the 2007 ACM SIGPLAN Conference on Programming Language Design and Implementation},
+year = {2007},
+pages = {78--88},
+publisher = {ACM},
+address = {New York, NY, USA},
+keywords = {code generation, compiler optimizations, escape analysis, isolation, ordering, strong atomicity, transactional memory, virtual memory, weak atomicity},
+doi = {10.1145/1250734.1250744},
+isbn = {978-1-59593-633-2},
+rating = {0},
+date-added = {2012-07-14T14:58:44GMT+00:00},
+date-modified = {2012-07-31T15:42:42GMT+00:00},
+abstract = {Transactional memory provides a new concurrency control mechanism that avoids many of the pitfalls of lock-based synchronization. High-performance software transactional memory (STM) implementations thus far provide weak atomicity: Accessing shared data both inside and outside a transaction can result in unexpected, implementation-dependent behavior. To guarantee isolation and consistent ordering in such a system, programmers are expected to enclose all shared-memory accesses inside transactions.
+
+A system that provides strong atomicity guarantees isolation even in the presence of threads that access shared data outside transactions. A strongly-atomic system also orders transactions with conflicting non-transactional memory operations in a consistent manner.
+
+In this paper, we discuss some surprising pitfalls of weak atomicity, and we present an STM system that avoids these problems via strong atomicity. We demonstrate how to implement non-transactional data accesses via efficient read and write barriers, and we present compiler optimizations that further reduce the overheads of these barriers. We introduce a dynamic escape analysis that differentiates private and public data at runtime to make barriers cheaper and a static not-accessed-in-transaction analysis that removes many barriers completely. Our results on a set of Java programs show that strong atomicity can be implemented efficiently in a high-performance STM system.},
+url = {http://doi.acm.org/10.1145/1250734.1250744},
+local-url = {file://localhost/Users/gjain/Library/Application%20Support/Papers2/Files/Enforcing%20Isolation%20and%20Ordering%20in%20STM.pdf},
+uri = {\url{papers2://publication/doi/10.1145/1250734.1250744}}
+}
+
+@inproceedings{4636089,
+author = {Minh, Chi Cao and Chung, JaeWoong and Kozyrakis, C. and Olukotun, K.},
+title = {{STAMP: Stanford Transactional Applications for Multi-Processing}},
+booktitle = {2008 IEEE International Symposium on Workload Characterization},
+year = {2008},
+pages = {35--46},
+month = sep,
+keywords = {multiprocessing systems, parallel programming, transaction processing},
+doi = {10.1109/IISWC.2008.4636089},
+rating = {0},
+date-added = {2012-07-23T21:56:48GMT+00:00},
+date-modified = {2012-08-01T04:55:16GMT+00:00},
+abstract = {Transactional Memory (TM) is emerging as a promising technology to simplify parallel programming. While several TM systems have been proposed in the research literature, we are still missing the tools and workloads necessary to analyze and compare the proposals. Most TM systems have been evaluated using microbenchmarks, which may not be representative of any real-world behavior, or individual applications, which do not stress a wide range of execution scenarios. We introduce the Stanford Transactional Application for Multi-Processing (STAMP), a comprehensive benchmark suite for evaluating TM systems. STAMP includes eight applications and thirty variants of input parameters and data sets in order to represent several application domains and cover a wide range of transactional execution cases (frequent or rare use of transactions, large or small transactions, high or low contention, etc.). Moreover, STAMP is portable across many types of TM systems, including hardware, software, and hybrid systems. In this paper, we provide descriptions and a detailed characterization of the applications in STAMP. We also use the suite to evaluate six different TM systems, identify their shortcomings, and motivate further research on their performance characteristics.},
+local-url = {file://localhost/Users/gjain/Library/Application%20Support/Papers2/Files/STAMP%20Stanford%20Transactional%20Applications%20for%20Multi-Processing.pdf},
+uri = {\url{papers2://publication/doi/10.1109/IISWC.2008.4636089}}
+}
+
+@inproceedings{4145103,
+author = {Wang, Cheng and Chen, Wei-Yu and Wu, Youfeng and Saha, Bratin and Adl-Tabatabai, Ali-Reza},
+title = {{Code Generation and Optimization for Transactional Memory Constructs in an Unmanaged Language}},
+booktitle = {2007 International Symposium on Code Generation and Optimization},
+year = {2007},
+pages = {34--48},
+month = mar,
+annote = {Mentions that TARIFA does not deal with function pointers},
+doi = {10.1109/CGO.2007.4},
+rating = {0},
+date-added = {2012-07-13T02:23:13GMT+00:00},
+date-modified = {2012-07-24T03:02:05GMT+00:00},
+abstract = {Transactional memory offers significant advantages for concurrency control compared to locks. This paper presents the design and implementation of transactional memory constructs in an unmanaged language. Unmanaged languages pose a unique set of challenges to transactional memory constructs - for example, lack of type and memory safety, use of function pointers, aliasing of local variables, and others. This paper describes novel compiler and runtime mechanisms that address these challenges and optimize the performance of transactions in an unmanaged environment. We have implemented these mechanisms in a production-quality C compiler and a high-performance software transactional memory runtime. We measure the effectiveness of these optimizations and compare the performance of lock-based versus transaction-based programming on a set of concurrent data structures and the SPLASH-2 benchmark suite. On a 16 processor SMP system, the transaction-based version of the SPLASH-2 benchmarks scales much better than the coarse-grain locking version and performs comparably to the fine-grain locking version. Compiler optimizations significantly reduce the overheads of transactional memory so that, on a single thread, the transaction-based version incurs only about 6.4% overhead compared to the lock-based version for the SPLASH-2 benchmark suite. Thus, our system is the first to demonstrate that transactions integrate well with an unmanaged language, and can perform as well as fine-grain locking while providing the programming ease of coarse-grain locking even on an unmanaged environment},
+local-url = {file://localhost/Users/gjain/Library/Application%20Support/Papers2/Files/Code%20Generation%20and%20Optimization%20for%20Transactional%20Memory%20Constructs%20in%20an%20Unmanaged%20Language.pdf},
+uri = {\url{papers2://publication/doi/10.1109/CGO.2007.4}}
+}
+
+@inproceedings{felber2007tanger,
+author = {Felber, Pascal and Fetzer, Christof and M{\"u}ller, Ulrich and Riegel, Torvald and S{\"u}{\ss}kraut, Martin and Sturzrehm, Heiko},
+title = {{Transactifying Applications using an Open Compiler Framework}},
+booktitle = {Proceedings of the 2nd ACM SIGPLAN Workshop on Transactional Computing},
+year = {2007},
+month = aug,
+rating = {0},
+date-added = {2012-07-13T03:32:55GMT+00:00},
+date-modified = {2012-08-01T20:39:16GMT+00:00},
+abstract = {Transactional memory dramatically reduces the complexity of writing concurrent code. Yet, seamless integration of transactional constructs in application code typically comes with a significant performance penalty. Recent studies have shown that compiler support allows producing highly efficient STM-based applications without putting the hassle on the programmer. So far, STM integration has been partially implemented in custom, proprietary compiler infrastructures. In this paper, we propose and evaluate the use of the LLVM open compiler framework to generate efficient concurrent applications using word-based STM libraries. Since LLVM uses the GCC compiler suite as front-end, it can process code written in C or C++ (with partial support for other languages). We also present a tool that allows ``transactifying'' assembly code and can complement LLVM for legacy code and libraries. Experiments using a lightweight C word-based STM library show that LLVM integration performs as well as hand-optimized calls to the STM library and better than assembly code instrumentation of the application code.},
+url = {http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.141.7337},
+local-url = {file://localhost/Users/gjain/Library/Application%20Support/Papers2/Files/Transactifying%20Applications%20using%20an%20Open%20Compiler%20Framework.pdf},
+uri = {\url{papers2://publication/uuid/79BFDDB2-D71A-4E90-999C-B657C4D0F309}}
+}
+
+@inproceedings{1281665,
+author = {Lattner, Chris and Adve, Vikram},
+title = {{LLVM: A Compilation Framework for Lifelong Program Analysis {\&} Transformation}},
+booktitle = {2004 International Symposium on Code Generation and Optimization},
+year = {2004},
+pages = {75--86},
+address = {Palo Alto, CA, USA},
+month = mar,
+doi = {10.1109/CGO.2004.1281665},
+rating = {0},
+date-added = {2012-07-14T15:05:18GMT+00:00},
+date-modified = {2012-07-24T03:00:54GMT+00:00},
+abstract = {We describe LLVM (low level virtual machine), a compiler framework designed to support transparent, lifelong program analysis and transformation for arbitrary programs, by providing high-level information to compiler transformations at compile-time, link-time, run-time, and in idle time between runs. LLVM defines a common, low-level code representation in static single assignment (SSA) form, with several novel features: a simple, language-independent type-system that exposes the primitives commonly used to implement high-level language features; an instruction for typed address arithmetic; and a simple mechanism that can be used to implement the exception handling features of high-level languages (and setjmp/longjmp in C) uniformly and efficiently. The LLVM compiler framework and code representation together provide a combination of key capabilities that are important for practical, lifelong analysis and transformation of programs. To our knowledge, no existing compilation approach provides all these capabilities. We describe the design of the LLVM representation and compiler framework, and evaluate the design in three ways: (a) the size and effectiveness of the representation, including the type information it provides; (b) compiler performance for several interprocedural problems; and (c) illustrative examples of the benefits LLVM provides for several challenging compiler problems.},
+url = {http://ieeexplore.ieee.org/xpl/articleDetails.jsp?arnumber=1281665},
+local-url = {file://localhost/Users/gjain/Library/Application%20Support/Papers2/Files/LLVM%20A%20Compilation%20Framework%20for%20Lifelong%20Program%20Analysis%20&%20Transformation.pdf},
+uri = {\url{papers2://publication/doi/10.1109/CGO.2004.1281665}}
+}
+
+@article{Cascaval:2008:STM:1454456.1454466,
+author = {Cascaval, Calin and Blundell, Colin and Michael, Maged and Cain, Harold W. and Wu, Peng and Chiras, Stefanie and Chatterjee, Siddhartha},
+title = {{Software Transactional Memory: Why Is It Only a Research Toy?}},
+journal = {ACM Queue},
+year = {2008},
+volume = {6},
+number = {5},
+pages = {46--58},
+doi = {10.1145/1454456.1454466},
+read = {Yes},
+rating = {0},
+date-added = {2012-07-14T05:44:18GMT+00:00},
+date-modified = {2012-08-01T12:52:02GMT+00:00},
+abstract = {STM is sometimes touted as the way forward for developing concurrent software, but is it ready for use in real-world applications? The authors built an STM runtime system and compiler framework, the IBM STM, and compared its performance to other similar products by Intel and Sun. They conclude that from both performance and productivity standpoints, STM still has a long way to go before it can be viable in the real world.},
+url = {http://doi.acm.org/10.1145/1454456.1454466},
+local-url = {file://localhost/Users/gjain/Library/Application%20Support/Papers2/Files/Software%20Transactional%20Memory%20Why%20Is%20It%20Only%20a%20Research%20Toy.pdf},
+uri = {\url{papers2://publication/doi/10.1145/1454456.1454466}}
+}
+
+@inproceedings{Yoo:2008:KTS:1378533.1378582,
+author = {Yoo, Richard M. and Ni, Yang and Welc, Adam and Saha, Bratin and Adl-Tabatabai, Ali-Reza and Lee, Hsien-Hsin S.},
+title = {{Kicking the Tires of Software Transactional Memory: Why the Going Gets Tough}},
+booktitle = {Proceedings of the Twentieth Annual Symposium on Parallelism in Algorithms and Architectures},
+year = {2008},
+pages = {265--274},
+publisher = {ACM},
+address = {New York, NY, USA},
+keywords = {c/c++, compiler, measurement, performance, runtime, software transactional memory},
+doi = {10.1145/1378533.1378582},
+isbn = {978-1-59593-973-9},
+rating = {0},
+date-added = {2012-07-21T01:03:06GMT+00:00},
+date-modified = {2012-08-02T13:48:41GMT+00:00},
+abstract = {Transactional Memory (TM) promises to simplify concurrent programming, which has been notoriously difficult but crucial in realizing the performance benefit of multi-core processors. Software Transaction Memory (STM), in particular, represents a body of important TM technologies since it provides a mechanism to run transactional programs when hardware TM support is not available, or when hardware TM resources are exhausted. Nonetheless, most previous researches on STMs were constrained to executing trivial, small-scale workloads. The assumption was that the same techniques applied to small-scale workloads could readily be applied to real-life, large-scale workloads. However, by executing several nontrivial workloads such as particle dynamics simulation and game physics engine on a state of the art STM, we noticed that this assumption does not hold. Specifically, we identified four major performance bottlenecks that were unique to the case of executing large-scale workloads on an STM: false conflicts, over-instrumentation, privatization-safety cost, and poor amortization. We believe that these bottlenecks would be common for any STM targeting real-world applications. In this paper, we describe those identified bottlenecks in detail, and we propose novel solutions to alleviate the issues. We also thoroughly validate these approaches with experimental results on real machines.},
+url = {http://doi.acm.org/10.1145/1378533.1378582},
+local-url = {file://localhost/Users/gjain/Library/Application%20Support/Papers2/Files/Kicking%20the%20Tires%20of%20Software%20Transactional%20Memory%20Why%20the%20Going%20Gets%20Tough.pdf},
+uri = {\url{papers2://publication/doi/10.1145/1378533.1378582}}
+}
+
+@inproceedings{Felber:2008:DPT:1345206.1345241,
+author = {Felber, Pascal and Fetzer, Christof and Riegel, Torvald},
+title = {{Dynamic Performance Tuning of Word-Based Software Transactional Memory}},
+booktitle = {13th ACM SIGPLAN Symposium on Principles and Practice of Parallel Programming},
+year = {2008},
+pages = {237--246},
+publisher = {ACM},
+address = {New York, NY, USA},
+keywords = {dynamic tuning, transactional memory},
+doi = {10.1145/1345206.1345241},
+isbn = {978-1-59593-795-7},
+rating = {0},
+date-added = {2012-07-22T01:28:58GMT+00:00},
+date-modified = {2012-08-22T17:09:25GMT+00:00},
+abstract = {The current generation of software transactional memories has the advantage of being simple and efficient. Nevertheless, there are several parameters that affect the performance of a transactional memory, for example the locality of the application and the cache line size of the processor. In this paper, we investigate dynamic tuning mechanisms on a new time-based software transactional memory implementation. We study in extensive measurements the performance of our implementation and exhibit the benefits of dynamic tuning. We compare our results with TL2, which is currently one of the fastest word-based software transactional memories.},
+url = {http://doi.acm.org/10.1145/1345206.1345241},
+local-url = {file://localhost/Users/gjain/Library/Application%20Support/Papers2/Files/Dynamic%20Performance%20Tuning%20of%20Word-Based%20Software%20Transactional%20Memory.pdf},
+uri = {\url{papers2://publication/doi/10.1145/1345206.1345241}}
+}
+
+@inproceedings{Dice:2010:TRR:1810479.1810531,
+author = {Dice, Dave and Shavit, Nir},
+title = {{TLRW: Return of the Read-Write Lock}},
+booktitle = {Proceedings of the 22nd ACM Symposium on Parallelism in Algorithms and Architectures},
+year = {2010},
+pages = {284--293},
+publisher = {ACM},
+address = {New York, NY, USA},
+keywords = {concurrent data structures, multicore processors},
+doi = {10.1145/1810479.1810531},
+isbn = {978-1-4503-0079-7},
+rating = {0},
+date-added = {2012-07-22T01:23:11GMT+00:00},
+date-modified = {2012-08-22T17:11:20GMT+00:00},
+abstract = {TL2 and similar STM algorithms deliver high scalability based on write-locking and invisible readers. In fact, no modern STM design locks to read along its common execution path because doing so would require a memory synchronization operation that would greatly hamper performance.
+
+In this paper we introduce TLRW, a new STM algorithm intended for the single-chip multicore systems that are quickly taking over a large fraction of the computing landscape. We make the claim that the cost of coherence in such single chip systems is down to a level that allows one to design a scalable STM based on read-write locks. TLRW is based on byte-locks, a novel read-write lock design with a low read-lock acquisition overhead and the ability to take advantage of the locality of reference within transactions. As we show, TLRW has a painfully simple design, one that naturally provides coherent state without validation, implicit privatization, and irrevocable transactions. Providing similar properties in STMs based on invisible-readers (such as TL2) has typically resulted in a major loss of performance.
+
+In a series of benchmarks we show that when running on a 64-way single-chip multicore machine, TLRW delivers surprisingly good performance (competitive with and sometimes outperforming TL2). However, on a 128-way 2-chip system that has higher coherence costs across the interconnect, performance deteriorates rapidly. We believe our work raises the question of whether on single-chip multicore machines, read-write lock-based STMs are the way to go.},
+url = {http://doi.acm.org/10.1145/1810479.1810531},
+local-url = {file://localhost/Users/gjain/Library/Application%20Support/Papers2/Files/TLRW%20Return%20of%20the%20Read-Write%20Lock.pdf},
+uri = {\url{papers2://publication/doi/10.1145/1810479.1810531}}
+}
+
+
