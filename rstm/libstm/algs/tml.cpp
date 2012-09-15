@@ -43,10 +43,10 @@ namespace {
       static TM_FASTCALL void* read(STM_READ_SIG(,,));
       static TM_FASTCALL void write(STM_WRITE_SIG(,,,));
       static TM_FASTCALL void commit(STM_COMMIT_SIG(,));
-      static TM_FASTCALL void reserve01(TxThread* tx, int bitmask, uintptr_t addr0);
-      static TM_FASTCALL void reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1);
-      static TM_FASTCALL void reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2);
-      static TM_FASTCALL void reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3);
+      static TM_FASTCALL void reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes);
+      static TM_FASTCALL void reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes);
+      static TM_FASTCALL void reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes);
+      static TM_FASTCALL void reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, int instrs, int reads, int writes);
 
       static stm::scope_t* rollback(STM_ROLLBACK_SIG(,,,));
       static bool irrevoc(STM_IRREVOC_SIG(,));
@@ -136,7 +136,7 @@ namespace {
   }
 
   void
-  TML::reserve01(TxThread* tx, int bitmask, uintptr_t addr0)
+  TML::reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes)
   {
       if (!tx->tmlHasLock) {
           uintptr_t val;
@@ -145,6 +145,10 @@ namespace {
               // If it's a reader check if it needs to abort
               CFENCE;
               if (__builtin_expect(timestamp.val != tx->start_time, false)) {
+#ifdef ALG_STATS
+		      if (writes == 0)
+             ++tx->num_skipped_undo_log_entries;
+#endif
 /*                  do {
                       val = stm::num_active_readers.val;
                   } while (!bcasptr(&stm::num_active_readers.val, val, val - 1));*/
@@ -153,8 +157,9 @@ namespace {
           } else {
               // No longer a reader
               // acquire the lock, abort on failure
-              if (!bcasptr(&timestamp.val, tx->start_time, tx->start_time + 1))
+              if (!bcasptr(&timestamp.val, tx->start_time, tx->start_time + 1)) {
                   tx->tmabort(tx);
+	      }
               do {
                   val = stm::num_active_readers.val;
               } while (!bcasptr(&stm::num_active_readers.val, val, val - 1));
@@ -162,33 +167,37 @@ namespace {
               tx->tmlHasLock = true;
               //Wait till all the readers have left
               int counter = 0;
+#ifdef ALG_STATS
               if (stm::num_active_readers.val != 0)
                   ++tx->num_writer_stalls;
-              while (stm::num_active_readers.val != 0) {
+#endif
+	      while (stm::num_active_readers.val != 0) {
                   spin64();
                   counter += 64;
+#ifdef ALG_STATS
                   ++tx->num_writer_stall_loops;
-              }
+#endif
+	      }
           }
       }
   }
 
   void
-  TML::reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1)
+  TML::reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes)
   {
-      reserve01(tx, bitmask, addr0);
+      reserve01(tx, bitmask, addr0, instrs, reads, writes);
   }
 
   void
-  TML::reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2)
+  TML::reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes)
   {
-      reserve02(tx, bitmask, addr0, addr1);
+      reserve02(tx, bitmask, addr0, addr1, instrs, reads, writes);
   }
   
   void
-  TML::reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3)
+  TML::reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, int instrs, int reads, int writes)
   {
-      reserve03(tx, bitmask, addr0, addr1, addr2);
+      reserve03(tx, bitmask, addr0, addr1, addr2, instrs, reads, writes);
   }
 
   /**

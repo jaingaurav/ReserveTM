@@ -24,10 +24,12 @@ namespace ReserveTM {
             std::vector<llvm::Value*> ordered_loads_stores;
             unsigned currentIndex;
             uint32_t fBitVector;
-            bool fUpcomingWrite;
+            uint32_t fUpcomingReads;
+            uint32_t fUpcomingWrites;
+            uint32_t fUpcomingInstructions;
 
         public:
-            BlockDependancies() : currentIndex(0), fBitVector(0), fUpcomingWrite(false) { }
+            BlockDependancies() : currentIndex(0), fBitVector(0), fUpcomingReads(0), fUpcomingWrites(0), fUpcomingInstructions(0) { }
             ~BlockDependancies() {
                 //TODO
                 //assert(loads.empty());
@@ -54,10 +56,16 @@ namespace ReserveTM {
             uint32_t copyLoadsStores(llvm::Value ** v);
             void copyLoads(ValueSet &s);
             void copyStores(ValueSet &s);
+            unsigned numReads();
+            unsigned numWrites();
             unsigned numLoads();
             unsigned numStores();
-            bool setUpcomingWrite() { bool old = fUpcomingWrite; fUpcomingWrite = true; return old; }
-            bool upcomingWrite() { return fUpcomingWrite; }
+            void setUpcomingReads(uint32_t reads) { fUpcomingReads = reads; }
+            uint32_t upcomingReads() { return fUpcomingReads; }
+            void setUpcomingWrites(uint32_t writes) { fUpcomingWrites = writes; }
+            uint32_t upcomingWrites() { return fUpcomingWrites; }
+            void setUpcomingInstructions(uint32_t instrs) { fUpcomingInstructions = instrs; }
+            uint32_t upcomingInstructions() { return fUpcomingInstructions; }
             bool hasStore() { return !(stores.empty() && allocs.empty() && frees.empty()); }
             void debugPrint();
     };

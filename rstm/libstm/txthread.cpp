@@ -18,41 +18,53 @@
 #include "inst.hpp"
 
 extern "C" void stmreserve01( int bitmask,
-    uintptr_t addr0
+    uintptr_t addr0,
+    int instrs,
+    int reads,
+    int writes
     )
 {
     stm::TxThread* tx = (stm::TxThread*)stm::Self;
-    tx->reserve01(bitmask, addr0);
+    tx->reserve01(bitmask, addr0, instrs, reads, writes);
 }
 
 extern "C" void stmreserve02( int bitmask,
     uintptr_t addr0,
-    uintptr_t addr1
+    uintptr_t addr1,
+    int instrs,
+    int reads,
+    int writes
     )
 {
     stm::TxThread* tx = (stm::TxThread*)stm::Self;
-    tx->reserve02(bitmask, addr0, addr1);
+    tx->reserve02(bitmask, addr0, addr1, instrs, reads, writes);
 }
 
 extern "C" void stmreserve03( int bitmask,
     uintptr_t addr0,
     uintptr_t addr1,
-    uintptr_t addr2
+    uintptr_t addr2,
+    int instrs,
+    int reads,
+    int writes
     )
 {
     stm::TxThread* tx = (stm::TxThread*)stm::Self;
-    tx->reserve03(bitmask, addr0, addr1, addr2);
+    tx->reserve03(bitmask, addr0, addr1, addr2, instrs, reads, writes);
 }
 
 extern "C" void stmreserve04( int bitmask,
     uintptr_t addr0,
     uintptr_t addr1,
     uintptr_t addr2,
-    uintptr_t addr3
+    uintptr_t addr3,
+    int instrs,
+    int reads,
+    int writes
     )
 {
     stm::TxThread* tx = (stm::TxThread*)stm::Self;
-    tx->reserve04(bitmask, addr0, addr1, addr2, addr3);
+    tx->reserve04(bitmask, addr0, addr1, addr2, addr3, instrs, reads, writes);
 }
 
 
@@ -118,6 +130,10 @@ namespace stm
      num_duplicate_non_reserved_writes(0),
       num_writer_stalls(0),
         num_writer_stall_loops(0),
+     num_undo_log_entries(0),
+       num_skippable_undo_log_entries(0),
+just_logged(0),	
+num_skipped_undo_log_entries(0),
         scope(NULL),
         start_time(0), tmlHasLock(false), undo_log(64), vlist(64), writes(64),
         r_orecs(64), locks(64),
@@ -340,6 +356,9 @@ void begin(TxThread* tx, scope_t* s, uint32_t /*abort_flags*/)
                     << "; dnrw: "     << threads[i]->num_duplicate_non_reserved_writes
                     << "; nws: " << threads[i]->num_writer_stalls
                     << "; nwsl: " << threads[i]->num_writer_stall_loops
+		    << "; nule: " << threads[i]->num_undo_log_entries
+		    << "; nsule: " << threads[i]->num_skippable_undo_log_entries
+		    << "; nsdule: " << threads[i]->num_skipped_undo_log_entries
                     << std::endl;
           threads[i]->abort_hist.dump();
           rw_txns += threads[i]->num_commits;

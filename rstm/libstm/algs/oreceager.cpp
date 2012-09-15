@@ -74,6 +74,10 @@ namespace {
 
   TM_FASTCALL void* read(STM_READ_SIG(,,));
   TM_FASTCALL void write(STM_WRITE_SIG(,,,));
+      static TM_FASTCALL void reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes);
+      static TM_FASTCALL void reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes);
+      static TM_FASTCALL void reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes);
+      static TM_FASTCALL void reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, int instrs, int reads, int writes);
   bool irrevoc(STM_IRREVOC_SIG(,));
   NOINLINE void validate(TxThread*);
   void onSwitchTo();
@@ -95,6 +99,10 @@ namespace {
 
       stm::stms[id].read      = read;
       stm::stms[id].write     = write;
+      stm::stms[id].reserve01 = reserve01;
+      stm::stms[id].reserve02 = reserve02;
+      stm::stms[id].reserve03 = reserve03;
+      stm::stms[id].reserve04 = reserve04;
       stm::stms[id].irrevoc   = irrevoc;
       stm::stms[id].switcher  = onSwitchTo;
       stm::stms[id].privatization_safe = false;
@@ -249,6 +257,106 @@ namespace {
           validate(tx);
           tx->start_time = newts;
       }
+  }
+
+  void
+  reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes)
+  {
+	void **addr = (void **) addr0;
+      if (!(bitmask & 1)) {
+      // get the orec addr, then start loop to read a consistent value
+      orec_t* o = get_orec(addr);
+      while (true) {
+          // read the orec BEFORE we read anything else
+          id_version_t ivt;
+          ivt.all = o->v.all;
+          CFENCE;
+
+          // best case: I locked it already
+          if (ivt.all == tx->my_lock.all)
+              return;
+
+          // re-read orec AFTER reading value
+          CFENCE;
+          uintptr_t ivt2 = o->v.all;
+
+          // common case: new read to an unlocked, old location
+          if ((ivt.all == ivt2) && (ivt.all <= tx->start_time)) {
+              tx->r_orecs.insert(o);
+              return;
+          }
+
+          // abort if locked
+          if (__builtin_expect(ivt.fields.lock, 0))
+              tx->tmabort(tx);
+
+          // scale timestamp if ivt is too new, then try again
+          uintptr_t newts = timestamp.val;
+          validate(tx);
+          tx->start_time = newts;
+      }
+  }
+      else
+   {
+      // get the orec addr, then enter loop to get lock from a consistent state
+      orec_t* o = get_orec(addr);
+      while (true) {
+          // read the orec version number
+          id_version_t ivt;
+          ivt.all = o->v.all;
+
+          // common case: uncontended location... try to lock it, abort on fail
+          if (ivt.all <= tx->start_time) {
+              if (!bcasptr(&o->v.all, ivt.all, tx->my_lock.all))
+                  tx->tmabort(tx);
+
+              // save old value, log lock, do the write, and return
+              o->p = ivt.all;
+              tx->locks.insert(o);
+              tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY(addr, *addr, mask)));
+              return;
+          }
+
+          // next best: I already have the lock... must log old value, because
+          // many locations hash to the same orec.  The lock does not mean I
+          // have undo logged *this* location
+          if (ivt.all == tx->my_lock.all) {
+              tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY(addr, *addr, mask)));
+              return;
+          }
+
+          // fail if lock held by someone else
+          if (ivt.fields.lock)
+              tx->tmabort(tx);
+
+          // unlocked but too new... scale forward and try again
+          uintptr_t newts = timestamp.val;
+          validate(tx);
+          tx->start_time = newts;
+      }
+  }
+
+  }
+
+  void
+  reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes)
+  {
+      reserve01(tx, bitmask, addr0, instrs, reads, writes);
+      reserve01(tx, bitmask>>1, addr1, instrs, reads, writes);
+  }
+
+  void
+  reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes)
+  {
+      reserve02(tx, bitmask, addr0, addr1, instrs, reads, writes);
+      reserve01(tx, bitmask>>2, addr2, instrs, reads, writes);
+  }
+  
+  void
+  reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, int instrs, int reads, int writes)
+  {
+      reserve03(tx, bitmask, addr0, addr1, addr2, instrs, reads, writes);
+      reserve01(tx, bitmask>>3, addr3, instrs, reads, writes);
   }
 
   /**

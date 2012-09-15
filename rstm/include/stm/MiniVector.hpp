@@ -52,7 +52,7 @@ namespace stm
       TM_INLINE void reset() { m_size = 0; }
 
       /*** Insert an element into the minivector */
-      TM_INLINE void insert(T data)
+      TM_INLINE unsigned long insert(T data)
       {
           // NB: There is a tradeoff here.  If we put the element into the list
           // first, we are going to have to copy one more object any time we
@@ -67,9 +67,10 @@ namespace stm
           // If the list is full, double the list size, allocate a new array
           // of elements, bitcopy the old array into the new array, and free
           // the old array. No destructors are called.
-          if (m_size != m_cap)
-              return;
-          expand();
+          if (m_size == m_cap)
+	      expand();
+
+	  return m_size;
       }
 
       /*** Simple getter to determine the array size */

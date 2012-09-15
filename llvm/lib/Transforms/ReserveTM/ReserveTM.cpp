@@ -48,6 +48,9 @@ STATISTIC(num_reservation_sites_completely_merged,      "2.4.2  Reservation site
 STATISTIC(num_reservation_sites_instrumented,           "2.5    Reservation sites instrumented");
 STATISTIC(num_reservation_sites_skipped,                "2.5    Reservation sites skipped");
 STATISTIC(num_reservation_sites_with_upcoming_write,    "2.6    Reservation sites with upcoming write");
+STATISTIC(num_reservation_sites_at_end,                 "2.7    Reservation sites at end");
+STATISTIC(num_reservation_sites_followed_by_loop,       "2.8    Reservation sites followed by loop");
+STATISTIC(num_reservation_sites_with_previous_store,    "2.9    Reservation sites with previous store");
 
 STATISTIC(num_functions,                                "3.1    Functions analyzed"); 
 STATISTIC(num_functions_with_memory_dependancies,       "3.2    Functions with memory dependencies"); 
@@ -61,14 +64,14 @@ STATISTIC(num_stm_reserve_4,                            "4.4    STM reservations
 
 STATISTIC(num_loads_compressed,                         "5.1.1  Loads compressed");
 STATISTIC(num_loads_compressed_inter_procedurally,      "5.1.2  Loads compressed inter-procedurally");
-STATISTIC(num_loads_compressed_thread_local,            "5.1.3  Loads compressed thread local");
+STATISTIC(num_loads_eliminated_thread_local,            "5.1.3  Loads eliminated thread local");
 STATISTIC(num_loads_merged,                             "5.2.1  Loads merged");
 STATISTIC(num_loads_merged_inter_procedurally,          "5.2.2  Loads merged inter-procedurally");
 STATISTIC(num_loads_eliminated,                         "5.3    Loads Eliminated");
 
 STATISTIC(num_stores_compressed,                        "6.1.1  Stores compressed");
 STATISTIC(num_stores_compressed_inter_procedurally,     "6.1.2  Stores compressed inter-procedurally");
-STATISTIC(num_stores_compressed_thread_local,           "6.1.3  Stores compressed thread local");
+STATISTIC(num_stores_eliminated_thread_local,           "6.1.3  Stores eliminated thread local");
 STATISTIC(num_stores_merged,                            "6.2.1  Stores merged");
 STATISTIC(num_stores_merged_inter_procedurally,         "6.2.2  Stores merged inter-procedurally");
 
@@ -76,7 +79,9 @@ bool printAliasEliminate = false;
 bool compress = true;
 bool eliminate = true;
 bool merge = true;
+bool singleWriter = true;
 bool fullInstrumentation = true;
+bool replaceInstrumentation = false;
 
 namespace {
 
@@ -109,11 +114,6 @@ namespace ReserveTM {
             SUCCESS_INTRA_PROCEDURAL,
         };
 
-        void willStoreValue(CallInst* ci, InstructionSet& visited);
-        void willStoreValue(Instruction* instr, InstructionSet& visited);
-        void willStoreValue(BasicBlock* block, InstructionSet& visited);
-        void updatePreviousSitesWithStore(Instruction *instr, InstructionSet& visited,  bool skip = false, bool initial = false);
-
         bool eliminateLoads(InstructionMap::const_iterator entry, ValueSet& cachedEliminations, ValueSet& cachedNonEliminations);
         bool willReserveValue(BasicBlock* block, ValueSet values, bool store, InstructionSet& visited );
         bool willReserveValue(Instruction* instr, ValueSet values, bool store, InstructionSet& visited );
@@ -124,7 +124,12 @@ namespace ReserveTM {
         void mergeValue(Instruction *instr, Value* v, bool store, std::queue<InstructionMap::const_iterator>& mergeQueue);
         CompressionResult canMergeValue(Instruction *instr, Value* v, InstructionSet& visited, bool initial = false);
         bool mergeBlock(InstructionMap::const_iterator entry, std::queue<InstructionMap::const_iterator>& mergeQueue);
-        std::multimap<Function *, CallInst *> fFunctionCallSites;
+
+bool calcReadsWrites(CallInst* ci, uint32_t* instrs, uint32_t* reads, uint32_t* writes, InstructionSet& visited);
+bool calcReadsWrites(Instruction* instr, uint32_t* instrs, uint32_t* reads, uint32_t* writes, InstructionSet& visited);
+bool calcReadsWrites(BasicBlock* block, uint32_t* instrs, uint32_t* reads, uint32_t* writes, InstructionSet& visited, Instruction* start = NULL);
+
+std::multimap<Function *, CallInst *> fFunctionCallSites;
         std::set<CallInst*> fFunctionCalls;
         InstructionSet fFunctionPointerBlocks;
         BasicBlockSet fCompressedBlocks;
@@ -198,6 +203,10 @@ namespace ReserveTM {
 
             return prev;
         }
+
+	std::set<Instruction*> getPrevious(Function * func) {
+return getPrevious(getFirstInstruction(func));
+	}
 
         std::set<Function*> getCalledFunctions(CallInst* ci) {
             std::set<Function*> funcs;
@@ -394,23 +403,33 @@ bool ReserveTM::ReserveTMPass::analyzeFunction(Function * const function,
 			*/
 			{
                             if (called->getName().str().find("stm_read") != std::string::npos) {
+                                ++num_loads_from_stm_call;
+if (replaceInstrumentation) {
                                 Instruction *newI = new LoadInst(arg, "newRead", true);
                                 ReplaceInstWithInst(ci, newI);
-                                ++num_loads_from_stm_call;
                                 instr_i = inst_begin(function);
                                 while (&*instr_i != newI) {
                                     ++instr_i;
                                 }
                                 continue;
+} else {
+                                ++num_loads;
+                                ls->insertLoad(arg);
+}
                             } else if (called->getName().str().find("stm_write") != std::string::npos) {
+                                ++num_stores_from_stm_call;
+if (replaceInstrumentation) {
                                 Instruction *newI = new StoreInst(ci->getArgOperand(1), arg, "newWrite", true);
                                 ReplaceInstWithInst(ci, newI);
-                                ++num_stores_from_stm_call;
                                 instr_i = inst_begin(function);
                                 while (&*instr_i != newI) {
                                     ++instr_i;
                                 }
                                 continue;
+} else {
+                                ++num_stores;
+                                ls->insertStore(arg);
+}
                             } else if (called->getName().str().find("tx_free") != std::string::npos) {
                                 ++num_frees;
                                 ++num_frees_from_stm_call;
@@ -686,25 +705,15 @@ void ReserveTM::ReserveTMPass::compressBlockValues(InstructionMap::const_iterato
         visited.clear();
 
         CompressionResult canCompress = FAIL;
-        bool thread_local = false;
-
-        //TODO: get better meaning
-        if (isFromAlloc(value)) {
-            thread_local = true;
-            canCompress = SUCCESS_INTRA_PROCEDURAL;
-        } else {
-            auto aliases = AliasMapper::getPeers(value);
-            canCompress = canCompressValue(instr, aliases, stores, visited, true, true);
-        }
+	auto aliases = AliasMapper::getPeers(value);
+	canCompress = canCompressValue(instr, aliases, stores, visited, true, true);
 
         if (canCompress != FAIL) {
             if (stores) {
                 ++num_stores_compressed;
                 if (canCompress == SUCCESS_INTER_PROCEDURAL)
                     ++num_stores_compressed_inter_procedurally;
-                if (thread_local)
-                    ++num_stores_compressed_thread_local;
-                ls->compressWithPreviousStore(value);
+		ls->compressWithPreviousStore(value);
                 //DEBUG_WITH_TYPE("compress", errs() << "Compressing Store: " << *value << " with aliases size: " << aliases.size() << "\n");
                 /*if (aliases.size() > 1) {
                   DEBUG_WITH_TYPE("compress", errs() << "Aliases:\n");
@@ -714,8 +723,6 @@ void ReserveTM::ReserveTMPass::compressBlockValues(InstructionMap::const_iterato
                 ++num_loads_compressed;
                 if (canCompress == SUCCESS_INTER_PROCEDURAL)
                     ++num_loads_compressed_inter_procedurally;
-                if (thread_local)
-                    ++num_loads_compressed_thread_local;
                 ls->compressWithPreviousLoad(value);
                 //DEBUG_WITH_TYPE("compress", errs() << "Compressing Load: " << *value << " with aliases size: " << aliases.size() << "\n");
                 /*if (aliases.size() > 1) {
@@ -739,11 +746,25 @@ bool ReserveTM::ReserveTMPass::eliminateLoads(InstructionMap::const_iterator ent
     assert(!ls->empty());
 
     size_t size = ls->size();
-    ValueSet loads;
-    ls->copyLoads(loads);
 
+    ValueSet values;
+    ls->copyStores(values);
+    for (auto storeValue : values) {
+        if (isFromAlloc(storeValue)) {
+            ++num_stores_eliminated_thread_local;
+            ls->compressWithPreviousStore(storeValue);
+        }
+    }
+
+    values.clear();
+    ls->copyLoads(values);
     ValueSet aliases;
-    for (auto loadValue : loads) {
+    for (auto loadValue : values) {
+        if (isFromAlloc(loadValue)) {
+            ++num_loads_eliminated_thread_local;
+            ls->compressWithPreviousLoad(loadValue);
+        } else
+	{
         bool canEliminate = true;
         aliases.clear();
         if (cachedEliminations.find(loadValue) == cachedEliminations.end()) {
@@ -790,14 +811,13 @@ bool ReserveTM::ReserveTMPass::eliminateLoads(InstructionMap::const_iterator ent
         } else {
             cachedNonEliminations.insert(aliases.begin(), aliases.end());
         }
+        }
     }
 
     if (ls->empty()) {
         DEBUG_WITH_TYPE("eliminate", errs() << "Instruction: " << instr << " completely eliminated\n");
         ++num_reservation_sites_completely_eliminated;
-    }
-
-    if (ls->size() != size) {
+    } else if (ls->size() != size) {
         DEBUG_WITH_TYPE("eliminate", errs() << "Instruction: " << instr << " partially eliminated\n");
         ++num_reservation_sites_partially_eliminated;
     }
@@ -967,87 +987,143 @@ bool ReserveTM::ReserveTMPass::mergeBlock(InstructionMap::const_iterator entry, 
     return false;
 }
 
-void ReserveTM::ReserveTMPass::willStoreValue(CallInst* ci, InstructionSet& visited) {
+bool ReserveTM::ReserveTMPass::calcReadsWrites(CallInst* ci, uint32_t* instrs, uint32_t* reads, uint32_t* writes, InstructionSet& visited ) {
     auto calledFunctions = getCalledFunctions(ci);
+    uint32_t new_instrs = 0;
+    uint32_t new_reads = 0;
+    uint32_t new_writes = 0;
+
     for (auto called : calledFunctions) {
         //TODO: handle function pointers
-        willStoreValue(&called->getEntryBlock(), visited);
+    uint32_t cur_instrs = 0;
+	uint32_t cur_reads = 0;
+	uint32_t cur_writes = 0;
+
+        if (!calcReadsWrites(&called->getEntryBlock(), &cur_instrs, &cur_reads, &cur_writes, visited)) {
+            return false;
+        }
+
+	if (cur_instrs > new_instrs)
+		new_instrs = cur_instrs;
+
+	if (cur_reads > new_reads)
+		new_reads = cur_reads;
+
+	if (cur_writes > new_writes)
+		new_writes = cur_writes;
     }
+
+    *instrs += new_instrs;
+    *reads += new_reads;
+    *writes += new_writes;
+
+    return true;
 }
 
-void ReserveTM::ReserveTMPass::willStoreValue(Instruction* instr, InstructionSet& visited) {
-    if (visited.find(instr) != visited.end()) {
-        return;
+bool ReserveTM::ReserveTMPass::calcReadsWrites(Instruction* instr, uint32_t* instrs, uint32_t* reads, uint32_t* writes, InstructionSet& visited ) {
+    if (fAnalyzedInstructions.find(instr) == fAnalyzedInstructions.end()) {
+    return true;
+    }
+
+	    if (visited.find(instr) != visited.end()) {
+        return false;
     }
     visited.insert(instr);
 
     auto it = fReservationSiteMap.find(instr);
     if (it != fReservationSiteMap.end()) {
         auto ls = it->second;
-        if (ls) {
-            if (ls->numOrderedLoadsStores() && !ls->setUpcomingWrite()) {
-                ++num_reservation_sites_with_upcoming_write;
-            }
+        if (ls && !ls->empty()) {
+	    ++instrs;
+	    reads += ls->numReads();
+	    writes += ls->numWrites();
         }
     }
 
     if (CallInst *ci = dyn_cast<CallInst>(instr)) {
-        willStoreValue(ci, visited);
+        return calcReadsWrites(ci, instrs, reads, writes, visited);
     }
+
+    return true;
 }
 
-void ReserveTM::ReserveTMPass::willStoreValue(BasicBlock* block, InstructionSet& visited) {
+bool ReserveTM::ReserveTMPass::calcReadsWrites(BasicBlock* block, uint32_t* instrs, uint32_t* reads, uint32_t* writes, InstructionSet& visited, Instruction* start) {
+
     for (BasicBlock::iterator i = block->begin(), e = block->end(); i != e; ++i) {
+	    Instruction *I = i;
+    if (fAnalyzedInstructions.find(I) == fAnalyzedInstructions.end()) {
+    return true;
+    }
+	    if (start) {
+	    if (I == start) {
+		    start == NULL;
+	    }
+	    } else {
         if (visited.find(i) != visited.end()) {
-            return;
+            return false;
         }
 
-        willStoreValue(i, visited);
+        if (!calcReadsWrites(i, instrs, reads, writes, visited))
+            return false;
+	    }
     }
 
-    for (succ_iterator si = succ_begin(block), si_e = succ_end(block); si != si_e; ++si) {
+    uint32_t new_instrs = 0;
+    uint32_t new_reads = 0;
+    uint32_t new_writes = 0;
+
+    if (succ_begin(block) != succ_end(block))
+    {
+	    for (succ_iterator si = succ_begin(block), si_e = succ_end(block); si != si_e; ++si) {
         BasicBlock *succ = *si;
-        willStoreValue(succ, visited);
+    uint32_t cur_instrs = 0;
+	uint32_t cur_reads = 0;
+	uint32_t cur_writes = 0;
+
+        if (!calcReadsWrites(succ, &cur_instrs, &cur_reads, &cur_writes, visited)) {
+            return false;
+        }
+
+	if (cur_instrs > new_instrs)
+		new_instrs = cur_instrs;
+
+	if (cur_reads > new_reads)
+		new_reads = cur_reads;
+
+	if (cur_writes > new_writes)
+		new_writes = cur_writes;
     }
 }
-
-void ReserveTM::ReserveTMPass::updatePreviousSitesWithStore(Instruction *instr, InstructionSet& visited, bool skip, bool initial) {
-    // Out of transactional scope
-    if (fAnalyzedInstructions.find(instr) == fAnalyzedInstructions.end()) {
-        return;
-    }
-
-    if (!initial) {
-        auto entry = fReservationSiteMap.find(instr);
-        if (entry != fReservationSiteMap.end()) {
-            auto ls = (*entry).second;
-
-            if (ls->upcomingWrite())
-                return;
-
-            if (ls->numOrderedLoadsStores() && !ls->setUpcomingWrite()) {
-                ++num_reservation_sites_with_upcoming_write;
-            }
-        }
-    }
-
-    auto inserted = visited.insert(instr);
-    if (!inserted.second)
-        return;
-
-    if (!skip) {
-        if (CallInst* ci = dyn_cast<CallInst>(instr)) {
-            InstructionSet willReserveVisited = visited;
-            willStoreValue(ci, willReserveVisited);
-        }
-    }
-
-    auto preds = getPrevious(instr);
+    else
+    {
+    auto preds = getPrevious(block->getParent());
     for (auto pred : preds) {
-        updatePreviousSitesWithStore(pred, visited, true);
-    }
-}
 
+    uint32_t cur_instrs = 0;
+	uint32_t cur_reads = 0;
+	uint32_t cur_writes = 0;
+
+        if (!calcReadsWrites(pred->getParent(), &cur_instrs, &cur_reads, &cur_writes, visited, pred)) {
+            return false;
+        }
+
+	if (cur_instrs > new_instrs)
+		new_instrs = cur_instrs;
+
+	if (cur_reads > new_reads)
+		new_reads = cur_reads;
+
+	if (cur_writes > new_writes)
+		new_writes = cur_writes;
+    }
+    }
+
+    *instrs += new_instrs;
+    *reads += new_reads;
+    *writes += new_writes;
+
+    return true;
+}
 
 bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
     llvm::Statistic *num_stm_reserve[4];
@@ -1058,6 +1134,9 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
             Type::getVoidTy(M.getContext()),
             Type::getInt32Ty(M.getContext()),
             Type::getInt64Ty(M.getContext()),
+            Type::getInt32Ty(M.getContext()),
+            Type::getInt32Ty(M.getContext()),
+            Type::getInt32Ty(M.getContext()),
             NULL));
     num_stm_reserve[0] = &num_stm_reserve_1;
     stm_reserve[1] = dyn_cast<Function>(M.getOrInsertFunction("stmreserve02",
@@ -1065,6 +1144,9 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
             Type::getInt32Ty(M.getContext()),
             Type::getInt64Ty(M.getContext()),
             Type::getInt64Ty(M.getContext()),
+            Type::getInt32Ty(M.getContext()),
+            Type::getInt32Ty(M.getContext()),
+            Type::getInt32Ty(M.getContext()),
             NULL));
     num_stm_reserve[1] = &num_stm_reserve_2;
     stm_reserve[2] = dyn_cast<Function>(M.getOrInsertFunction("stmreserve03",
@@ -1073,6 +1155,9 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
             Type::getInt64Ty(M.getContext()),
             Type::getInt64Ty(M.getContext()),
             Type::getInt64Ty(M.getContext()),
+            Type::getInt32Ty(M.getContext()),
+            Type::getInt32Ty(M.getContext()),
+            Type::getInt32Ty(M.getContext()),
             NULL));
     num_stm_reserve[2] = &num_stm_reserve_3;
     stm_reserve[3] = dyn_cast<Function>(M.getOrInsertFunction("stmreserve04",
@@ -1082,6 +1167,9 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
             Type::getInt64Ty(M.getContext()),
             Type::getInt64Ty(M.getContext()),
             Type::getInt64Ty(M.getContext()),
+            Type::getInt32Ty(M.getContext()),
+            Type::getInt32Ty(M.getContext()),
+            Type::getInt32Ty(M.getContext()),
             NULL));
     num_stm_reserve[3] = &num_stm_reserve_4;
 
@@ -1251,8 +1339,10 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
         }
     }
 
-    // Compression Pass
-    std::queue<InstructionMap::const_iterator> eliminateQueue;
+    // Eliminate Pass
+    std::queue<InstructionMap::const_iterator> compressionQueue;
+    ValueSet cachedEliminations;
+    ValueSet cachedNonEliminations;
     for (auto entry = fReservationSiteMap.begin(); entry != fReservationSiteMap.end(); ++entry) {
         auto ls = (*entry).second;
         assert(ls);
@@ -1260,25 +1350,27 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
         if (ls->empty())
             continue;
 
-        if (compress && !compressBlock(entry))
-            eliminateQueue.push(entry);
+        if (!eliminate || !eliminateLoads(entry, cachedEliminations, cachedNonEliminations))
+            compressionQueue.push(entry);
     }
-
-    // Eliminate Loads Pass
+    
+    // Compression Pass
     std::queue<InstructionMap::const_iterator> mergeQueue;
-    ValueSet cachedEliminations;
-    ValueSet cachedNonEliminations;
-    while (!eliminateQueue.empty()) {
-        auto entry = eliminateQueue.front();
-        eliminateQueue.pop();
-        if (eliminate && !eliminateLoads(entry, cachedEliminations, cachedNonEliminations))
+    while (!compressionQueue.empty()) {
+        auto entry = compressionQueue.front();
+        compressionQueue.pop();
+        if (!compressBlock(entry))
             mergeQueue.push(entry);
     }
-
+    
     // Merge Pass
     while (!mergeQueue.empty()) {
         auto entry = mergeQueue.front();
         mergeQueue.pop();
+
+	//if (singleWriter && hasPreviousStore(entry))
+	//	++num_reservation_sites_with_previous_store;
+
         if (merge)
             mergeBlock(entry, mergeQueue);
     }
@@ -1293,15 +1385,24 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
         if (ls->empty())
             continue;
 
-        //Already processed this one
-        if (ls->upcomingWrite())
-            continue;
-
-        if (ls->hasStore()) {
             auto instr = entry.first;
+	uint32_t reads = 0;
+uint32_t writes = 0;
+uint32_t instrs = 0;
+
             visited.clear();
-            updatePreviousSitesWithStore(instr, visited, true, true);
-        }
+if (calcReadsWrites(instr->getParent(), &instrs, &reads, &writes, visited, instr)) {
+			ls->setUpcomingInstructions(instrs);
+			ls->setUpcomingReads(reads);
+			ls->setUpcomingWrites(writes);
+			if (instrs == 0)
+				++num_reservation_sites_at_end;
+		} else {
+			ls->setUpcomingInstructions(1000);
+			ls->setUpcomingReads(10000);
+			ls->setUpcomingWrites(10000);
+++num_reservation_sites_followed_by_loop;
+		}
     }
 
     num_functions = fAdded.size();
@@ -1340,14 +1441,18 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
             DEBUG_WITH_TYPE("instrument", errs() << "Instrumenting Instruction: " << instr << " ");
             DEBUG_WITH_TYPE("instrument", ls->debugPrint());
 
-            Value * args[num_entries + 1];
+            Value * args[num_entries + 4];
             uint32_t bit_vector = ls->copyLoadsStores(args + 1);
 
             for (auto i = 1; i <= num_entries; ++i) {
                 args[i] = CastInst::CreatePointerCast (args[i], Type::getInt64Ty(args[i]->getContext()), "", instr);
             }
             args[0] = ConstantInt::get(IntegerType::get(M.getContext(), 32), bit_vector, true);
-            CallInst::Create(stm_reserve[num_entries - 1], ArrayRef<Value*>(args, num_entries + 1), "", instr);
+	    unsigned cur_entry = num_entries + 1;
+            args[cur_entry++] = ConstantInt::get(IntegerType::get(M.getContext(), 32), ls->upcomingInstructions(), true);
+            args[cur_entry++] = ConstantInt::get(IntegerType::get(M.getContext(), 32), ls->upcomingReads(), true);
+            args[cur_entry++] = ConstantInt::get(IntegerType::get(M.getContext(), 32), ls->upcomingWrites(), true);
+            CallInst::Create(stm_reserve[num_entries - 1], ArrayRef<Value*>(args, num_entries + 4), "", instr);
 
             ++(*num_stm_reserve[num_entries - 1]);
             ++num_reservation_sites_instrumented;

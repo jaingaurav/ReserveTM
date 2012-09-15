@@ -41,10 +41,10 @@ namespace {
       static TM_FASTCALL void write_rw(STM_WRITE_SIG(,,,));
       static TM_FASTCALL void commit_ro(STM_COMMIT_SIG(,));
       static TM_FASTCALL void commit_rw(STM_COMMIT_SIG(,));
-      static TM_FASTCALL void reserve01(TxThread* tx, int bitmask, uintptr_t addr0);
-      static TM_FASTCALL void reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1);
-      static TM_FASTCALL void reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2);
-      static TM_FASTCALL void reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3);
+      static TM_FASTCALL void reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes);
+      static TM_FASTCALL void reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes);
+      static TM_FASTCALL void reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes);
+      static TM_FASTCALL void reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, int instrs, int reads, int writes);
 
       static stm::scope_t* rollback(STM_ROLLBACK_SIG(,,,));
       static bool irrevoc(STM_IRREVOC_SIG(,));
@@ -85,6 +85,9 @@ namespace {
           (*i)->reader[tx->id-1] = 0;
 
       tx->r_bytelocks.reset();
+#ifdef ALG_STATS
+      tx->just_logged = 0;
+#endif
       OnReadOnlyCommit(tx);
   }
 
@@ -105,6 +108,11 @@ namespace {
       tx->w_bytelocks.reset();
       tx->undo_log.reset();
       OnReadWriteCommit(tx, read_ro, write_ro, commit_ro);
+#ifdef ALG_STATS
+      if (tx->just_logged)
+	      ++tx->num_skippable_undo_log_entries;
+      tx->just_logged = 0;
+#endif
   }
 
   /**
@@ -254,19 +262,27 @@ namespace {
 
   
   void
-  ByteEager::reserve01(TxThread* tx, int bitmask, uintptr_t addr0)
+  ByteEager::reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes)
   {
       uint32_t tries = 0;
       bytelock_t* lock = get_bytelock((void **)addr0);
 
       if (!(bitmask & 1)) {
           // do I have the write lock?
-          if (lock->owner == tx->id)
+          if (lock->owner == tx->id) {
+#ifdef ALG_STATS
+	  tx->just_logged = 0;
+#endif
               return;
+	  }
 
           // do I have a read lock?
-          if (lock->reader[tx->id-1] == 1)
+          if (lock->reader[tx->id-1] == 1){
+#ifdef ALG_STATS
+	  tx->just_logged = 0;
+#endif
               return;
+	  }
 
           // log this location
           tx->r_bytelocks.insert(lock);
@@ -277,8 +293,12 @@ namespace {
               lock->set_read_byte(tx->id-1);
 
               // if nobody has the write lock, we're done
-              if (__builtin_expect(lock->owner == 0, true))
+              if (__builtin_expect(lock->owner == 0, true)) {
+#ifdef ALG_STATS
+	  tx->just_logged = 0;
+#endif
                   return;
+	      }
 
               // drop read lock, wait (with timeout) for lock release
               lock->reader[tx->id-1] = 0;
@@ -287,10 +307,16 @@ namespace {
                       tx->tmabort(tx);
               }
           }
+#ifdef ALG_STATS
+	  tx->just_logged = 0;
+#endif
       } else {
           // If I have the write lock, add to undo log, do write, return
           if (lock->owner == tx->id) {
               tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY((void **)addr0, *((void **)addr0), mask)));
+#ifdef ALG_STATS
+	  tx->just_logged = 0;
+#endif
               return;
           }
 
@@ -300,7 +326,7 @@ namespace {
                   tx->tmabort(tx);
 
           // log the lock, drop any read locks I have
-          tx->w_bytelocks.insert(lock);
+          unsigned long size = tx->w_bytelocks.insert(lock);
           lock->reader[tx->id-1] = 0;
 
           // wait (with timeout) for readers to drain out
@@ -314,32 +340,39 @@ namespace {
           }
 
           // add to undo log, do in-place write
-          tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY((void **)addr0, *((void **)addr0), mask)));
-      OnFirstWrite(tx, read_rw, write_rw, commit_rw);
-      
+#ifdef ALG_STATS
+          ++tx->num_undo_log_entries;
+	  tx->just_logged = 1;
+
+      if (writes == 0)
+	      ++tx->num_skipped_undo_log_entries;
+#endif
+
+      tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY((void **)addr0, *((void **)addr0), mask)));
+      if (size == 1)
+	      OnFirstWrite(tx, read_rw, write_rw, commit_rw);
       }
   }
 
-  
   void
-  ByteEager::reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1)
+  ByteEager::reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes)
   {
-      reserve01(tx, bitmask, addr0);
-      reserve01(tx, bitmask>>1, addr1);
+      reserve01(tx, bitmask, addr0, instrs, reads, writes);
+      reserve01(tx, bitmask>>1, addr1, instrs, reads, writes);
   }
 
   void
-  ByteEager::reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2)
+  ByteEager::reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes)
   {
-      reserve02(tx, bitmask, addr0, addr1);
-      reserve01(tx, bitmask>>2, addr2);
+      reserve02(tx, bitmask, addr0, addr1, instrs, reads, writes);
+      reserve01(tx, bitmask>>2, addr2, instrs, reads, writes);
   }
   
   void
-  ByteEager::reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3)
+  ByteEager::reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, int instrs, int reads, int writes)
   {
-      reserve03(tx, bitmask, addr0, addr1, addr2);
-      reserve01(tx, bitmask>>3, addr3);
+      reserve03(tx, bitmask, addr0, addr1, addr2, instrs, reads, writes);
+      reserve01(tx, bitmask>>3, addr3, instrs, reads, writes);
   }
 
   /**

@@ -30,7 +30,7 @@
 #include <set>
 
 #define RESERVES_ACTIVE 1
-#define STATS_ACTIVE 0
+#define STATS_ACTIVE 1
 
 namespace stm
 {
@@ -77,8 +77,11 @@ namespace stm
       uint32_t       num_duplicate_non_reserved_writes;
       uint32_t num_writer_stalls;
       uint32_t num_writer_stall_loops;
-
-      scope_t* volatile scope;      // used to roll back; also flag for isTxnl
+uint32_t num_undo_log_entries;
+uint32_t num_skippable_undo_log_entries;
+uint32_t just_logged;    
+uint32_t num_skipped_undo_log_entries;
+scope_t* volatile scope;      // used to roll back; also flag for isTxnl
       uintptr_t      start_time;    // start time of transaction
       uintptr_t      end_time;      // end time of transaction
       uintptr_t      ts_cache;      // last validation time
@@ -143,10 +146,10 @@ namespace stm
       TM_FASTCALL void(*tmcommit)(STM_COMMIT_SIG(,));
       TM_FASTCALL void*(*tmread)(STM_READ_SIG(,,));
       TM_FASTCALL void(*tmwrite)(STM_WRITE_SIG(,,,));
-      TM_FASTCALL void(*tmreserve01)(TxThread* tx, int bitmask, uintptr_t addr0);
-      TM_FASTCALL void(*tmreserve02)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1);
-      TM_FASTCALL void(*tmreserve03)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2);
-      TM_FASTCALL void(*tmreserve04)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3);
+      TM_FASTCALL void(*tmreserve01)(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes);
+      TM_FASTCALL void(*tmreserve02)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes);
+      TM_FASTCALL void(*tmreserve03)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes);
+      TM_FASTCALL void(*tmreserve04)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, int instrs, int reads, int writes);
 
       public:
       /**
@@ -264,7 +267,7 @@ namespace stm
               ++num_redundant_reserved_writes;
       }
 
-      TM_FASTCALL void reserve01(int bitmask, uintptr_t addr0)
+      TM_FASTCALL void reserve01(int bitmask, uintptr_t addr0, int instrs, int reads, int writes)
       {
 #if STATS_ACTIVE
           ++num_reserved_calls;
@@ -275,11 +278,11 @@ namespace stm
           }
 #endif
 #if RESERVES_ACTIVE
-          tmreserve01(this, bitmask, addr0);
+          tmreserve01(this, bitmask, addr0, instrs, reads, writes);
 #endif
       }
 
-      TM_FASTCALL void reserve02(int bitmask, uintptr_t addr0, uintptr_t addr1)
+      TM_FASTCALL void reserve02(int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes)
       {
 #if STATS_ACTIVE
           ++num_reserved_calls;
@@ -295,11 +298,11 @@ namespace stm
           }
 #endif
 #if RESERVES_ACTIVE
-          tmreserve02(this, bitmask, addr0, addr1);
+          tmreserve02(this, bitmask, addr0, addr1, instrs, reads, writes);
 #endif
       }
 
-      TM_FASTCALL void reserve03(int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2)
+      TM_FASTCALL void reserve03(int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes)
       {
 #if STATS_ACTIVE
           ++num_reserved_calls;
@@ -320,11 +323,11 @@ namespace stm
           }
 #endif
 #if RESERVES_ACTIVE
-          tmreserve03(this, bitmask, addr0, addr1, addr2);
+          tmreserve03(this, bitmask, addr0, addr1, addr2, instrs, reads, writes);
 #endif
       }
 
-      TM_FASTCALL void reserve04(int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3)
+      TM_FASTCALL void reserve04(int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, int instrs, int reads, int writes)
       {
 #if STATS_ACTIVE
           ++num_reserved_calls;
@@ -350,7 +353,7 @@ namespace stm
           }
 #endif
 #if RESERVES_ACTIVE
-          tmreserve04(this, bitmask, addr0, addr1, addr2, addr3);
+          tmreserve04(this, bitmask, addr0, addr1, addr2, addr3, instrs, reads, writes);
 #endif
       }
 
@@ -369,10 +372,10 @@ namespace stm
       }
 
       void setReserve(
-          TM_FASTCALL void(*reserve01)(TxThread* tx, int bitmask, uintptr_t addr0),
-      TM_FASTCALL void(*reserve02)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1),
-      TM_FASTCALL void(*reserve03)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2),
-      TM_FASTCALL void(*reserve04)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3))
+          TM_FASTCALL void(*reserve01)(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes),
+      TM_FASTCALL void(*reserve02)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes),
+      TM_FASTCALL void(*reserve03)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes),
+      TM_FASTCALL void(*reserve04)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, int instrs, int reads, int writes))
       {
           tmreserve01 = reserve01;
           tmreserve02 = reserve02;

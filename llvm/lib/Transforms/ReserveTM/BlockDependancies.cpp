@@ -42,7 +42,7 @@ size_t ReserveTM::BlockDependancies::size() {
 
 
 bool ReserveTM::BlockDependancies::containsLoadFrom(Value *v) {
-    if (loads.find(v) == loads.end()) {
+    if ((loads.find(v) == loads.end()) && (prev_loads.find(v) == prev_loads.end())) {
         return false;
     }
 
@@ -51,10 +51,12 @@ bool ReserveTM::BlockDependancies::containsLoadFrom(Value *v) {
 
 bool ReserveTM::BlockDependancies::containsStoreTo(Value *v) {
     if (stores.find(v) == stores.end()) {
+    if (prev_stores.find(v) == prev_stores.end()) {
         if (allocs.find(v) == allocs.end()) {
             if (frees.find(v) == frees.end()) {
                 return false;
             }
+        }
         }
     }
 
@@ -231,6 +233,14 @@ void ReserveTM::BlockDependancies::copyStores(ValueSet &s) {
     for (auto it : stores) {
         s.insert(it.first);
     }
+}
+
+unsigned ReserveTM::BlockDependancies::numWrites() {
+    return stores.size() + frees.size() + allocs.size();
+}
+
+unsigned ReserveTM::BlockDependancies::numReads() {
+    return loads.size();
 }
 
 unsigned ReserveTM::BlockDependancies::numLoads() {

@@ -109,10 +109,10 @@ namespace stm
       void  (*TM_FASTCALL commit)(STM_COMMIT_SIG(,));
       void* (*TM_FASTCALL read)  (STM_READ_SIG(,,));
       void  (*TM_FASTCALL write) (STM_WRITE_SIG(,,,));
-      void  (*TM_FASTCALL reserve01)(TxThread* tx, int bitmask, uintptr_t addr0);
-      void  (*TM_FASTCALL reserve02)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1);
-      void  (*TM_FASTCALL reserve03)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2);
-      void  (*TM_FASTCALL reserve04)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3);
+      void  (*TM_FASTCALL reserve01)(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes);
+      void  (*TM_FASTCALL reserve02)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes);
+      void  (*TM_FASTCALL reserve03)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes);
+      void  (*TM_FASTCALL reserve04)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, int instrs, int reads, int writes);
 
       /**
        * rolls the transaction back without unwinding, returns the scope (which
