@@ -112,6 +112,7 @@ namespace {
   bool
   OrecEager_Generic<CM>::begin(TxThread* tx)
   {
+tx->started = true;
       // sample the timestamp and prepare local structures
       tx->allocator.onTxBegin();
       tx->start_time = timestamp.val;
@@ -262,6 +263,21 @@ namespace {
   void
   reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes)
   {
+//bool over = false;
+ if (!tx->started)
+return;
+#if 0
+if (bitmask > 4)  {  
+bitmask -= 4;
+over = false;
+
+fprintf(stderr, "XXX %d tx= %p, bitmask=%d, addr0=%p, val=%x\n", reads, tx, bitmask, addr0, (void*)*(long *)addr0);
+//bitmask = 0;
+//*(int*)bitmask = 1;
+} else {
+//fprintf(stderr, "%d tx= %p, bitmask=%d, addr0=%p, val=%p\n", reads, tx, bitmask, addr0, (void*)*(long *)addr0);
+}
+#endif
 	void **addr = (void **) addr0;
       if (!(bitmask & 1)) {
       // get the orec addr, then start loop to read a consistent value
@@ -335,28 +351,55 @@ namespace {
           tx->start_time = newts;
       }
   }
-
+//if (over)
+//fprintf(stderr, "reserve01 - done: %p, addr=%p, val=%p", addr, (void*)(*addr));
   }
 
   void
   reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes)
   {
+if (addr0 == addr1) {
+      reserve01(tx, bitmask | (bitmask >> 1), addr0, instrs, reads, writes);
+}
+else
+{
       reserve01(tx, bitmask, addr0, instrs, reads, writes);
       reserve01(tx, bitmask>>1, addr1, instrs, reads, writes);
+}
   }
 
   void
   reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes)
   {
-      reserve02(tx, bitmask, addr0, addr1, instrs, reads, writes);
-      reserve01(tx, bitmask>>2, addr2, instrs, reads, writes);
+if (addr0 == addr1) {
+     if (bitmask & 1)
+         bitmask = (bitmask >> 1) | 1;
+      else
+         bitmask = (bitmask >> 1);
+      reserve02(tx, bitmask, addr1, addr2, instrs, reads, writes);
+}
+else
+{
+      reserve01(tx, bitmask, addr0, instrs, reads, writes);
+      reserve02(tx, bitmask>>1, addr1, addr2, instrs, reads, writes);
+}
   }
   
   void
   reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, int instrs, int reads, int writes)
   {
-      reserve03(tx, bitmask, addr0, addr1, addr2, instrs, reads, writes);
-      reserve01(tx, bitmask>>3, addr3, instrs, reads, writes);
+if (addr0 == addr1) {
+     if (bitmask & 1)
+         bitmask = (bitmask >> 1) | 1;
+      else
+         bitmask = (bitmask >> 1);
+      reserve03(tx, bitmask, addr1, addr2, addr3, instrs, reads, writes);
+}
+else
+{
+      reserve01(tx, bitmask, addr0, instrs, reads, writes);
+      reserve03(tx, bitmask>>1, addr1, addr2, addr3, instrs, reads, writes);
+}
   }
 
   /**

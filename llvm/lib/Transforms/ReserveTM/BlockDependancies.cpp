@@ -31,6 +31,7 @@ STATISTIC(num_loads_skipped_from_previous_store,        "4.6    Loads skipped fr
 STATISTIC(num_stores_on_phi,                            "5.3    Stores on PHI values(total)");
 STATISTIC(num_stores_on_phi_compressed,                 "5.4    Stores on PHI values compressed");
 STATISTIC(num_stores_skipped,                           "5.5    Stores skipped (total)");
+STATISTIC(num_stores_compress_merged,                           "5.6    Stores compress/merged (total)");
 
 bool ReserveTM::BlockDependancies::empty() {
     return loads.empty() && stores.empty() && allocs.empty() && frees.empty();
@@ -141,7 +142,8 @@ void ReserveTM::BlockDependancies::compressPhiNodes() {
     }
 }
 
-bool ReserveTM::BlockDependancies::insertLoad(Value *v) {
+bool ReserveTM::BlockDependancies::insertLoad(Value *v, bool over) {
+    fOverIntrumentation = over;
     if (PHINode* phiNode = dyn_cast<PHINode>(v)) {
         ++num_loads_on_phi;
         if (phi_stores.find(phiNode) == phi_stores.end()) {
@@ -164,7 +166,8 @@ bool ReserveTM::BlockDependancies::insertLoad(Value *v) {
     }
 }
 
-bool ReserveTM::BlockDependancies::insertStore(Value *v) {
+bool ReserveTM::BlockDependancies::insertStore(Value *v, bool over) {
+    fOverIntrumentation = over;
     if (PHINode* phiNode = dyn_cast<PHINode>(v)) {
         ++num_stores_on_phi;
         phi_stores.insert(phiNode);
@@ -221,6 +224,8 @@ uint32_t ReserveTM::BlockDependancies::copyLoadsStores(Value ** v) {
         ++index;
     }
 
+    if (fOverIntrumentation)
+         bit_vector += 4;
     return bit_vector;
 }
 

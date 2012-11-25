@@ -27,6 +27,7 @@ namespace ReserveTM {
             uint32_t fUpcomingReads;
             uint32_t fUpcomingWrites;
             uint32_t fUpcomingInstructions;
+            bool fOverIntrumentation;
 
         public:
             BlockDependancies() : currentIndex(0), fBitVector(0), fUpcomingReads(0), fUpcomingWrites(0), fUpcomingInstructions(0) { }
@@ -45,8 +46,8 @@ namespace ReserveTM {
             bool canCompressLoadPhiNode(llvm::PHINode* phiNode, ValueSet &prev_loads, ValueSet &prev_stores);
             bool canCompressStorePhiNode(llvm::PHINode* phiNode, ValueSet &prev_loads, ValueSet &prev_stores);
             void compressPhiNodes();
-            bool insertLoad(llvm::Value *v);
-            bool insertStore(llvm::Value *v);
+            bool insertLoad(llvm::Value *v, bool over = false);
+            bool insertStore(llvm::Value *v, bool over = false);
             bool insertAlloc(llvm::Value *v);
             bool insertFree(llvm::Value *v);
             bool compressWithPreviousLoad(llvm::Value* v);

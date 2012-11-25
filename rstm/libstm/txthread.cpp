@@ -87,6 +87,7 @@ namespace
   NORETURN void
   default_abort_handler(TxThread* tx)
   {
+    tx->started = false;
       jmp_buf* scope = (jmp_buf*)TxThread::tmrollback(tx
 #if defined(STM_PROTECT_STACK)
                                                 , TOP_OF_ARGS(1)
@@ -134,6 +135,7 @@ namespace stm
        num_skippable_undo_log_entries(0),
 just_logged(0),	
 num_skipped_undo_log_entries(0),
+started(false),
         scope(NULL),
         start_time(0), tmlHasLock(false), undo_log(64), vlist(64), writes(64),
         r_orecs(64), locks(64),

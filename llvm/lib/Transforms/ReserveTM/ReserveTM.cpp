@@ -26,6 +26,7 @@ using namespace llvm;
 using ReserveTM::ValueSet;
 
 #define DEBUG_INFO 1
+//#define ELIMINATE_FIRST
 
 STATISTIC(num_instructions_analyzed,                    "1.1    Instructions analyzed");
 STATISTIC(num_loads,                                    "1.2.1  Loads (total)");
@@ -64,13 +65,16 @@ STATISTIC(num_stm_reserve_4,                            "4.4    STM reservations
 
 STATISTIC(num_loads_compressed,                         "5.1.1  Loads compressed");
 STATISTIC(num_loads_compressed_inter_procedurally,      "5.1.2  Loads compressed inter-procedurally");
+STATISTIC(num_loads_compressed_thread_local,            "5.1.3  Loads compressed thread local");
 STATISTIC(num_loads_eliminated_thread_local,            "5.1.3  Loads eliminated thread local");
+STATISTIC(num_loads_eliminated_thread_local_whole,      "5.1.4  Loads eliminated thread local (whole)");
 STATISTIC(num_loads_merged,                             "5.2.1  Loads merged");
 STATISTIC(num_loads_merged_inter_procedurally,          "5.2.2  Loads merged inter-procedurally");
 STATISTIC(num_loads_eliminated,                         "5.3    Loads Eliminated");
 
 STATISTIC(num_stores_compressed,                        "6.1.1  Stores compressed");
 STATISTIC(num_stores_compressed_inter_procedurally,     "6.1.2  Stores compressed inter-procedurally");
+STATISTIC(num_stores_compressed_thread_local,           "6.1.3  Stores compressed thread local");
 STATISTIC(num_stores_eliminated_thread_local,           "6.1.3  Stores eliminated thread local");
 STATISTIC(num_stores_merged,                            "6.2.1  Stores merged");
 STATISTIC(num_stores_merged_inter_procedurally,         "6.2.2  Stores merged inter-procedurally");
@@ -78,6 +82,7 @@ STATISTIC(num_stores_merged_inter_procedurally,         "6.2.2  Stores merged in
 bool printAliasEliminate = false;
 bool compress = true;
 bool eliminate = true;
+bool strongIsolation = true;
 bool merge = true;
 bool singleWriter = true;
 bool fullInstrumentation = true;
@@ -140,14 +145,17 @@ std::multimap<Function *, CallInst *> fFunctionCallSites;
             if (Instruction *I = dyn_cast<Instruction>(v)) {
                 if (GetElementPtrInst *gep = dyn_cast<GetElementPtrInst>(I)) {
                     return isFromAlloc(gep->getPointerOperand());
+              //  } else if (PtrToIntInst *pt = dyn_cast<PtrToIntInst>(I)) {
+                    //TODO: be more rigorous
+                //    return isFromAlloc(pt->getOperand(0));
                 } else if (BitCastInst *bc = dyn_cast<BitCastInst>(I)) {
                     //TODO: be more rigorous
                     return isFromAlloc(bc->getOperand(0));
                 } else if (CallInst *ci = dyn_cast<CallInst>(I)) {
-                    auto func = ci->getCalledFunction();
-                    if (func && func->hasName() && (func->getName().str().find("tx_alloc") != std::string::npos)) {
+                 /*   auto func = ci->getCalledFunction();
+                    if (func && func->hasName() && ((func->getName().str().find("malloc") != std::string::npos) || (func->getName().str().find("tx_alloc") != std::string::npos))) {
                         return true;
-                    }
+                    }*/
                 } else if (isa<AllocaInst>(I)) {
                     return true;
                 }
@@ -333,8 +341,16 @@ INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
             if (!func->isIntrinsic()
                 && func->hasName()
                 && (func->getName().str().find("_ZN3stm") == std::string::npos)
+                && (func->getName().str().find("free") == std::string::npos)
+                && (func->getName().str().find("abs") == std::string::npos)
+                && (func->getName().str().find("printf") == std::string::npos)
+                && (func->getName().str().find("puts") == std::string::npos)
+                && (func->getName().str().find("fwrite") == std::string::npos)
+                && (func->getName().str().find("acos") == std::string::npos)
+                && (func->getName().str().find("sqrt") == std::string::npos)
+                && (func->getName().str().find("malloc") == std::string::npos)
                 && (func->getName().str().find("_assert") == std::string::npos)
-                && (func->getName().str().find("pthread_getspecific") == std::string::npos)) {
+                && (func->getName().str().find("pthread") == std::string::npos)) {
                 return true;
             }
 
@@ -365,6 +381,8 @@ bool ReserveTM::ReserveTMPass::analyzeFunction(Function * const function,
         DEBUG_WITH_TYPE("analyze", printInst(I, true));
         DEBUG_WITH_TYPE("analyze", errs() << "\n");
 
+       if (analyzedInstructions.find(I) != analyzedInstructions.end())
+           return false;
         if (!ls)
             ls = new BlockDependancies();
 
@@ -372,12 +390,12 @@ bool ReserveTM::ReserveTMPass::analyzeFunction(Function * const function,
 
         if (LoadInst *li = dyn_cast<LoadInst>(I)) {
             ++num_loads;
-            if (fullInstrumentation)
-                ls->insertLoad(li->getPointerOperand());
+         //   if (fullInstrumentation)
+           //     ls->insertLoad(li->getPointerOperand(), true);
         } else if (StoreInst *si = dyn_cast<StoreInst>(I)) {
             ++num_stores;
-            if (fullInstrumentation)
-                ls->insertStore(si->getPointerOperand());
+            //if (fullInstrumentation)
+              //  ls->insertStore(si->getPointerOperand(), true);
         } else if (CallInst *ci = dyn_cast<CallInst>(I)) {
             Function* called = ci->getCalledFunction();
             if (!called || !called->isIntrinsic()) {
@@ -404,6 +422,7 @@ bool ReserveTM::ReserveTMPass::analyzeFunction(Function * const function,
 			{
                             if (called->getName().str().find("stm_read") != std::string::npos) {
                                 ++num_loads_from_stm_call;
+#if 1
 if (replaceInstrumentation) {
                                 Instruction *newI = new LoadInst(arg, "newRead", true);
                                 ReplaceInstWithInst(ci, newI);
@@ -416,8 +435,10 @@ if (replaceInstrumentation) {
                                 ++num_loads;
                                 ls->insertLoad(arg);
 }
+#endif
                             } else if (called->getName().str().find("stm_write") != std::string::npos) {
                                 ++num_stores_from_stm_call;
+#if 1
 if (replaceInstrumentation) {
                                 Instruction *newI = new StoreInst(ci->getArgOperand(1), arg, "newWrite", true);
                                 ReplaceInstWithInst(ci, newI);
@@ -430,6 +451,7 @@ if (replaceInstrumentation) {
                                 ++num_stores;
                                 ls->insertStore(arg);
 }
+#endif
                             } else if (called->getName().str().find("tx_free") != std::string::npos) {
                                 ++num_frees;
                                 ++num_frees_from_stm_call;
@@ -468,7 +490,7 @@ if (replaceInstrumentation) {
         } else if (isa<ExtractValueInst>(I)) {
         } else {
             DEBUG_WITH_TYPE("analyze", errs() << "Unhandled instruction: " << *I << "\n");
-            assert(false);
+            //assert(false);
         }
 
         if (!ls->empty()) {
@@ -705,14 +727,25 @@ void ReserveTM::ReserveTMPass::compressBlockValues(InstructionMap::const_iterato
         visited.clear();
 
         CompressionResult canCompress = FAIL;
-	auto aliases = AliasMapper::getPeers(value);
-	canCompress = canCompressValue(instr, aliases, stores, visited, true, true);
+	bool thread_local = false;
+	if (isFromAlloc(value)) {
+	             thread_local = true;
+		                 canCompress = SUCCESS_INTRA_PROCEDURAL;
+				         
+ }
+ else
+					 {
+						             auto aliases = AliasMapper::getPeers(value);
+							                 canCompress = canCompressValue(instr, aliases, stores, visited, true, true);
+									         }
 
         if (canCompress != FAIL) {
             if (stores) {
                 ++num_stores_compressed;
                 if (canCompress == SUCCESS_INTER_PROCEDURAL)
                     ++num_stores_compressed_inter_procedurally;
+        if (thread_local)
+		                    ++num_stores_compressed_thread_local;
 		ls->compressWithPreviousStore(value);
                 //DEBUG_WITH_TYPE("compress", errs() << "Compressing Store: " << *value << " with aliases size: " << aliases.size() << "\n");
                 /*if (aliases.size() > 1) {
@@ -723,6 +756,8 @@ void ReserveTM::ReserveTMPass::compressBlockValues(InstructionMap::const_iterato
                 ++num_loads_compressed;
                 if (canCompress == SUCCESS_INTER_PROCEDURAL)
                     ++num_loads_compressed_inter_procedurally;
+		if (thread_local)
+			                    ++num_loads_compressed_thread_local;
                 ls->compressWithPreviousLoad(value);
                 //DEBUG_WITH_TYPE("compress", errs() << "Compressing Load: " << *value << " with aliases size: " << aliases.size() << "\n");
                 /*if (aliases.size() > 1) {
@@ -763,7 +798,33 @@ bool ReserveTM::ReserveTMPass::eliminateLoads(InstructionMap::const_iterator ent
         if (isFromAlloc(loadValue)) {
             ++num_loads_eliminated_thread_local;
             ls->compressWithPreviousLoad(loadValue);
-        } else
+        }
+#if 0
+bool aliasesAreAlwaysFromAlloc = false;
+        aliases.clear();
+        if (cachedEliminations.find(loadValue) == cachedEliminations.end()) {
+            if (cachedNonEliminations.find(loadValue) == cachedNonEliminations.end()) {
+                if (!AliasMapper::getAliases(loadValue, aliases)) {
+                    continue;
+                }
+bool fail = false;
+                //TODO: is this right?
+                for (auto value : aliases) {
+                    if (!isFromAlloc(value) &&  !isa<Argument>(value)) {
+fail = true;
+break;                    
+}
+                }
+if (!fail) {
+            ++num_loads_eliminated_thread_local_whole;
+            ls->compressWithPreviousLoad(loadValue);
+aliasesAreAlwaysFromAlloc = true;
+}
+            }
+        }
+
+#endif
+else if (strongIsolation)
 	{
         bool canEliminate = true;
         aliases.clear();
@@ -1353,7 +1414,7 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
         if (!eliminate || !eliminateLoads(entry, cachedEliminations, cachedNonEliminations))
             compressionQueue.push(entry);
     }
-    
+
     // Compression Pass
     std::queue<InstructionMap::const_iterator> mergeQueue;
     while (!compressionQueue.empty()) {
@@ -1377,6 +1438,7 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
 
     //Analyze Pass
     InstructionSet visited;
+int index = 0;
     for (auto entry : fReservationSiteMap) {
         auto ls = entry.second;
 
@@ -1391,17 +1453,21 @@ uint32_t writes = 0;
 uint32_t instrs = 0;
 
             visited.clear();
+/*
 if (calcReadsWrites(instr->getParent(), &instrs, &reads, &writes, visited, instr)) {
 			ls->setUpcomingInstructions(instrs);
 			ls->setUpcomingReads(reads);
 			ls->setUpcomingWrites(writes);
 			if (instrs == 0)
 				++num_reservation_sites_at_end;
-		} else {
-			ls->setUpcomingInstructions(1000);
-			ls->setUpcomingReads(10000);
-			ls->setUpcomingWrites(10000);
-++num_reservation_sites_followed_by_loop;
+		} else
+*/
+{
+			ls->setUpcomingInstructions(1000+index);
+			ls->setUpcomingReads(10000+index);
+			ls->setUpcomingWrites(10000+index);
+++index;
+//++num_reservation_sites_followed_by_loop;
 		}
     }
 

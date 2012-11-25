@@ -70,6 +70,7 @@ namespace {
   bool
   ByteEager::begin(TxThread* tx)
   {
+  tx->started = true;
       tx->allocator.onTxBegin();
       return false;
   }
@@ -264,6 +265,20 @@ namespace {
   void
   ByteEager::reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes)
   {
+ if (!tx->started)
+return;
+#if 0
+bool over = false;
+
+if (bitmask >= 4)  {  
+bitmask -= 4;
+over = true;
+
+//fprintf(stderr, "XXX %d tx= %p, bitmask=%d, addr0=%p, val=%x\n", reads, tx, bitmask, addr0, (void*)*(long *)addr0);
+} else {
+//fprintf(stderr, "YYY %d tx= %p, bitmask=%d, addr0=%p, val=%x\n", reads, tx, bitmask, addr0, (void*)*(long *)addr0);
+}
+#endif
       uint32_t tries = 0;
       bytelock_t* lock = get_bytelock((void **)addr0);
 
@@ -357,22 +372,48 @@ namespace {
   void
   ByteEager::reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes)
   {
+if (addr0 == addr1) {
+      reserve01(tx, bitmask | (bitmask >> 1), addr0, instrs, reads, writes);
+}
+else
+{
       reserve01(tx, bitmask, addr0, instrs, reads, writes);
       reserve01(tx, bitmask>>1, addr1, instrs, reads, writes);
+}
   }
 
   void
   ByteEager::reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes)
   {
-      reserve02(tx, bitmask, addr0, addr1, instrs, reads, writes);
-      reserve01(tx, bitmask>>2, addr2, instrs, reads, writes);
+if (addr0 == addr1) {
+     if (bitmask & 1)
+         bitmask = (bitmask >> 1) | 1;
+      else
+         bitmask = (bitmask >> 1);
+      reserve02(tx, bitmask, addr1, addr2, instrs, reads, writes);
+}
+else
+{
+      reserve01(tx, bitmask, addr0, instrs, reads, writes);
+      reserve02(tx, bitmask>>1, addr1, addr2, instrs, reads, writes);
+}
   }
   
   void
   ByteEager::reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, int instrs, int reads, int writes)
   {
-      reserve03(tx, bitmask, addr0, addr1, addr2, instrs, reads, writes);
-      reserve01(tx, bitmask>>3, addr3, instrs, reads, writes);
+if (addr0 == addr1) {
+     if (bitmask & 1)
+         bitmask = (bitmask >> 1) | 1;
+      else
+         bitmask = (bitmask >> 1);
+      reserve03(tx, bitmask, addr1, addr2, addr3, instrs, reads, writes);
+}
+else
+{
+      reserve01(tx, bitmask, addr0, instrs, reads, writes);
+      reserve03(tx, bitmask>>1, addr1, addr2, addr3, instrs, reads, writes);
+}
   }
 
   /**

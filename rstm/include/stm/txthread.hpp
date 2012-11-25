@@ -30,7 +30,7 @@
 #include <set>
 
 #define RESERVES_ACTIVE 1
-#define STATS_ACTIVE 1
+//#define STATS_ACTIVE 1
 
 namespace stm
 {
@@ -81,6 +81,8 @@ uint32_t num_undo_log_entries;
 uint32_t num_skippable_undo_log_entries;
 uint32_t just_logged;    
 uint32_t num_skipped_undo_log_entries;
+public:
+bool started;
 scope_t* volatile scope;      // used to roll back; also flag for isTxnl
       uintptr_t      start_time;    // start time of transaction
       uintptr_t      end_time;      // end time of transaction
@@ -194,6 +196,7 @@ scope_t* volatile scope;      // used to roll back; also flag for isTxnl
           read_set.clear();
           write_set.clear();
 #endif
+started = false;
           tmcommit(this);
       }
       TM_FASTCALL void* read(void** addr)

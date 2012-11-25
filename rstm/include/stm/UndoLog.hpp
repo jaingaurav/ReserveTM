@@ -46,7 +46,10 @@ namespace stm
       { }
 
       /***  for word logging, we undo an entry by simply writing it back */
-      inline void undo() const { *addr = val; }
+      inline void undo() const {
+
+//fprintf(stderr, "ULE: %p, curval=%x, val=%x\n", addr, (void *)*addr, (void*)val);
+ *addr = val; }
 
       /**
        *  Called in order to find out if the logged word falls within the
@@ -134,7 +137,10 @@ namespace stm
                   uaddr.bytes[i] = uval.bytes[i];
       }
 
-      inline void undo() const { DoMaskedWrite(addr, val, mask); }
+      inline void undo() const { 
+//fprintf(stderr, "ULE: %p, val=%p, mask=%d\n", addr, val, mask);
+
+DoMaskedWrite(addr, val, mask); }
 
       /**
        *  The bytelog implementation of the filter operation support any sort
