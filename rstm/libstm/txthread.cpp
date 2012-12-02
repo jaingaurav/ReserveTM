@@ -17,18 +17,19 @@
 #include "algs/algs.hpp"
 #include "inst.hpp"
 
-extern "C" void stmreserve01( int bitmask,
+#if 1
+extern "C" void stmreserve01(stm::TxThread* tx,
+  int bitmask,
     uintptr_t addr0,
     int instrs,
     int reads,
     int writes
     )
 {
-    stm::TxThread* tx = (stm::TxThread*)stm::Self;
     tx->reserve01(bitmask, addr0, instrs, reads, writes);
 }
 
-extern "C" void stmreserve02( int bitmask,
+extern "C" void stmreserve02( stm::TxThread* tx, int bitmask,
     uintptr_t addr0,
     uintptr_t addr1,
     int instrs,
@@ -36,11 +37,10 @@ extern "C" void stmreserve02( int bitmask,
     int writes
     )
 {
-    stm::TxThread* tx = (stm::TxThread*)stm::Self;
     tx->reserve02(bitmask, addr0, addr1, instrs, reads, writes);
 }
 
-extern "C" void stmreserve03( int bitmask,
+extern "C" void stmreserve03( stm::TxThread* tx, int bitmask,
     uintptr_t addr0,
     uintptr_t addr1,
     uintptr_t addr2,
@@ -49,11 +49,10 @@ extern "C" void stmreserve03( int bitmask,
     int writes
     )
 {
-    stm::TxThread* tx = (stm::TxThread*)stm::Self;
     tx->reserve03(bitmask, addr0, addr1, addr2, instrs, reads, writes);
 }
 
-extern "C" void stmreserve04( int bitmask,
+extern "C" void stmreserve04(stm::TxThread* tx, int bitmask,
     uintptr_t addr0,
     uintptr_t addr1,
     uintptr_t addr2,
@@ -63,10 +62,9 @@ extern "C" void stmreserve04( int bitmask,
     int writes
     )
 {
-    stm::TxThread* tx = (stm::TxThread*)stm::Self;
     tx->reserve04(bitmask, addr0, addr1, addr2, addr3, instrs, reads, writes);
 }
-
+#endif
 
 using namespace stm;
 

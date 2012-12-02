@@ -51,7 +51,7 @@ namespace stm
   struct TxThread
   {
       /*** THESE FIELDS DEAL WITH THE STM IMPLEMENTATIONS ***/
-      uint32_t       id;            // per thread id
+      uint64_t       id;            // per thread id
       uint32_t       nesting_depth; // nesting; 0 == not in transaction
       WBMMPolicy     allocator;     // buffer malloc/free
       uint32_t       num_commits;   // stats counter: commits

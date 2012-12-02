@@ -96,7 +96,7 @@ namespace stm
    */
   struct bytelock_t
   {
-      volatile uint32_t      owner;      // no need for more than 32 bits
+      volatile uint64_t      owner;
       volatile unsigned char reader[CACHELINE_BYTES - sizeof(uint32_t)];
 
       /**

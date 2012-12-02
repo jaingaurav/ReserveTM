@@ -208,6 +208,55 @@ namespace stm
 #define TM_READ(var)       stm::stm_read(&var, tx)
 #define TM_WRITE(var, val) stm::stm_write(&var, val, tx)
 
+#if 0
+inline void stmreserve01(stm::TxThread* tx,
+  int bitmask,
+    uintptr_t addr0,
+    int instrs,
+    int reads,
+    int writes
+    )
+{
+    tx->reserve01(bitmask, addr0, instrs, reads, writes);
+}
+
+inline void stmreserve02( stm::TxThread* tx, int bitmask,
+    uintptr_t addr0,
+    uintptr_t addr1,
+    int instrs,
+    int reads,
+    int writes
+    )
+{
+    tx->reserve02(bitmask, addr0, addr1, instrs, reads, writes);
+}
+
+inline void stmreserve03( stm::TxThread* tx, int bitmask,
+    uintptr_t addr0,
+    uintptr_t addr1,
+    uintptr_t addr2,
+    int instrs,
+    int reads,
+    int writes
+    )
+{
+    tx->reserve03(bitmask, addr0, addr1, addr2, instrs, reads, writes);
+}
+
+inline void stmreserve04(stm::TxThread* tx, int bitmask,
+    uintptr_t addr0,
+    uintptr_t addr1,
+    uintptr_t addr2,
+    uintptr_t addr3,
+    int instrs,
+    int reads,
+    int writes
+    )
+{
+    tx->reserve04(bitmask, addr0, addr1, addr2, addr3, instrs, reads, writes);
+}
+
+#endif
 /**
  *  This is the way to start a transaction
  */

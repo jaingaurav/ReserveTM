@@ -196,7 +196,7 @@ namespace {
       bytelock_t* lock = get_bytelock(addr);
 
       // get the write lock, with timeout
-      while (!bcas32(&(lock->owner), 0u, tx->id))
+      while (!bcas64(&(lock->owner), 0u, tx->id))
           if (++tries > ACQUIRE_TIMEOUT)
               tx->tmabort(tx);
 
@@ -238,7 +238,7 @@ namespace {
       }
 
       // get the write lock, with timeout
-      while (!bcas32(&(lock->owner), 0u, tx->id))
+      while (!bcas64(&(lock->owner), 0u, tx->id))
           if (++tries > ACQUIRE_TIMEOUT)
               tx->tmabort(tx);
 
@@ -265,8 +265,8 @@ namespace {
   void
   ByteEager::reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes)
   {
- if (!tx->started)
-return;
+      if (!tx->started)
+          return;
 #if 0
 bool over = false;
 
@@ -336,7 +336,7 @@ over = true;
           }
 
           // get the write lock, with timeout
-          while (!bcas32(&(lock->owner), 0u, tx->id))
+          while (!bcas64(&(lock->owner), 0u, tx->id))
               if (++tries > ACQUIRE_TIMEOUT)
                   tx->tmabort(tx);
 

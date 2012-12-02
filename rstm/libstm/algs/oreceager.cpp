@@ -176,6 +176,10 @@ tx->started = true;
   void*
   read(STM_READ_SIG(tx,addr,))
   {
+#if 1
+    tx->reserve01(0x0, (uintptr_t)addr, 1000, 1000, 1000);
+              return *addr;
+#else
       // get the orec addr, then start loop to read a consistent value
       orec_t* o = get_orec(addr);
       while (true) {
@@ -210,6 +214,7 @@ tx->started = true;
           validate(tx);
           tx->start_time = newts;
       }
+#endif
   }
 
   /**
@@ -220,6 +225,10 @@ tx->started = true;
   void
   write(STM_WRITE_SIG(tx,addr,val,mask))
   {
+#if 1
+    tx->reserve01(0x1, (uintptr_t)addr, 1000, 1000, 1000);
+    STM_DO_MASKED_WRITE(addr, val, mask);
+#else
       // get the orec addr, then enter loop to get lock from a consistent state
       orec_t* o = get_orec(addr);
       while (true) {
@@ -258,6 +267,7 @@ tx->started = true;
           validate(tx);
           tx->start_time = newts;
       }
+#endif
   }
 
   void
