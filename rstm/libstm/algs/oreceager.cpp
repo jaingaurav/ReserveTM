@@ -369,6 +369,7 @@ fprintf(stderr, "XXX %d tx= %p, bitmask=%d, addr0=%p, val=%x\n", reads, tx, bitm
   reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes)
   {
 if (addr0 == addr1) {
+  ++tx->num_dynamic_merges;
       reserve01(tx, bitmask | (bitmask >> 1), addr0, instrs, reads, writes);
 }
 else
@@ -382,6 +383,7 @@ else
   reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes)
   {
 if (addr0 == addr1) {
+  ++tx->num_dynamic_merges;
      if (bitmask & 1)
          bitmask = (bitmask >> 1) | 1;
       else
@@ -399,6 +401,7 @@ else
   reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, int instrs, int reads, int writes)
   {
 if (addr0 == addr1) {
+  ++tx->num_dynamic_merges;
      if (bitmask & 1)
          bitmask = (bitmask >> 1) | 1;
       else

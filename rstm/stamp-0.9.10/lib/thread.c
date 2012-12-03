@@ -152,10 +152,12 @@ thread_startup (long numThread)
                       global_threadAttr,
                       &threadWait,
                       &global_threadIds[i]);
+#if 0
         cpu_set_t set;
         CPU_ZERO(&set);
         CPU_SET(i-1, &set);
         sched_setaffinity(0, sizeof(cpu_set_t), &set);
+#endif
     }
 
     /*

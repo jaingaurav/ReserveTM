@@ -131,6 +131,7 @@ namespace stm
         num_writer_stall_loops(0),
      num_undo_log_entries(0),
        num_skippable_undo_log_entries(0),
+       num_dynamic_merges(0),
 just_logged(0),	
 num_skipped_undo_log_entries(0),
 started(false),
@@ -359,6 +360,7 @@ void begin(TxThread* tx, scope_t* s, uint32_t /*abort_flags*/)
 		    << "; nule: " << threads[i]->num_undo_log_entries
 		    << "; nsule: " << threads[i]->num_skippable_undo_log_entries
 		    << "; nsdule: " << threads[i]->num_skipped_undo_log_entries
+		    << "; dm: " << threads[i]->num_dynamic_merges
                     << std::endl;
           threads[i]->abort_hist.dump();
           rw_txns += threads[i]->num_commits;

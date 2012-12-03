@@ -84,8 +84,10 @@ STATISTIC(num_compression_aborts_from_exit,             "8.3.1  Compression abor
 STATISTIC(num_compression_aborts_from_recursion,        "8.3.2  Compression aborts from recursion");
 STATISTIC(num_compression_aborts_from_partial_paths,    "8.3.3  Compression aborts from partial paths");
 
+STATISTIC(num_merge_definition_moves,                   "9.2.5  Merge definition moves");
 STATISTIC(num_merge_aborts_from_function_calls,         "9.3.3  Merge aborts from function calls");
 STATISTIC(num_merge_aborts_from_partial_paths,          "9.3.4  Merge aborts from partial paths");
+STATISTIC(num_merge_aborts_from_definition,             "9.3.5  Merge aborts from definition");
 
 bool printAliasEliminate = false;
 bool compress = true;
@@ -137,8 +139,7 @@ namespace ReserveTM {
     ReservationSiteSet compressStoreIntoLoad(Instruction *instr, ValueSet values, InstructionSet& visited, bool skip = false, bool initial = false);
     ReservationSiteSet CompressionSitesValue(Instruction *instr, ValueSet values, bool store, InstructionSet& visited, bool skip = false, bool initial = false);
     bool compressSite(InstructionMap::const_iterator entry);
-    void mergeValue(Instruction *instr, Value* v, bool store, std::queue<InstructionMap::const_iterator>& mergeQueue);
-    CompressionResult canMergeValue(Instruction *instr, Value* v, InstructionSet& visited, bool initial = false);
+    ReservationSiteSet canMergeValue(Instruction *instr, Value* v, InstructionSet& visited, bool initial = false);
     bool mergeBlock(InstructionMap::const_iterator entry, std::queue<InstructionMap::const_iterator>& mergeQueue);
 
     bool calcReadsWrites(CallInst* ci, uint32_t* instrs, uint32_t* reads, uint32_t* writes, InstructionSet& visited);
@@ -235,6 +236,54 @@ namespace ReserveTM {
       }
 
       return prev;
+    }
+
+    Instruction* moveUp(Instruction* I) {
+      //std::set<Instruction*> prev;
+      auto block = I->getParent();
+      if (I == block->begin()) {
+        //TODO: Handle correctly
+        return 0;
+#if 0
+        //TODO: this is a hack
+        if (singleBlock)
+          return prev;
+
+        if (pred_begin(block) == pred_end(block)) {
+          auto func = block->getParent();
+          assert(&func->getEntryBlock() == block);
+          auto ret = fFunctionCallSites.equal_range(func);
+          for (auto callSiteIt=ret.first; callSiteIt!=ret.second; ++callSiteIt) {
+            prev.insert((*callSiteIt).second);
+          }
+        } else {
+          for (pred_iterator pi = pred_begin(block), pi_e = pred_end(block); pi != pi_e; ++pi) {
+            BasicBlock *pred = *pi;
+
+            assert(pred->size());
+
+            auto instr_e = pred->end();
+            prev.insert(--instr_e);
+          }
+        }
+#endif
+      } else {
+        for (auto instr_i = block->begin(), instr_e = block->end(); instr_i != instr_e; ++instr_i) {
+          if (&*instr_i == I) {
+            //prev.insert(--instr_i);
+            --instr_i;
+            if (GetElementPtrInst *gep = dyn_cast<GetElementPtrInst>(I)) {
+              if (isa<LoadInst>(instr_i) && ( instr_i != gep->getPointerOperand())) {
+                I->moveBefore(instr_i);
+                return instr_i;
+              }
+            }
+            break;
+          }
+        }
+      }
+
+      return 0;//prev;
     }
 
     std::set<Instruction*> getPrevious(Function * func) {
@@ -467,7 +516,7 @@ bool ReserveTM::ReserveTMPass::analyzeFunction(Function * const function,
                 //    DEBUG_WITH_TYPE("analyze", errs() << "Function Attributes: " << called->getAttributes().getFnAttributes().getAsString() << "\n");
 #if 1
                 if (replaceInstrumentation) {
-                  Instruction *newI = new LoadInst(arg, "newRead", true);
+                  Instruction *newI = new LoadInst(arg, "newRead", false);
                   ReplaceInstWithInst(ci, newI);
                   instr_i = inst_begin(function);
                   while (&*instr_i != newI) {
@@ -492,7 +541,7 @@ bool ReserveTM::ReserveTMPass::analyzeFunction(Function * const function,
                 //    DEBUG_WITH_TYPE("analyze", errs() << "Function Attributes: " << called->getAttributes().getFnAttributes().getAsString() << "\n");
 #if 1
                 if (replaceInstrumentation) {
-                  Instruction *newI = new StoreInst(ci->getArgOperand(1), arg, "newWrite", true);
+                  Instruction *newI = new StoreInst(ci->getArgOperand(1), arg, "newWrite", false);
                   ReplaceInstWithInst(ci, newI);
                   instr_i = inst_begin(function);
                   while (&*instr_i != newI) {
@@ -1087,58 +1136,34 @@ bool ReserveTM::ReserveTMPass::eliminateLoads(InstructionMap::const_iterator ent
   return false; 
 }
 
-void ReserveTM::ReserveTMPass::mergeValue(Instruction *instr, Value* value, bool store, std::queue<InstructionMap::const_iterator>& mergeQueue) {
-  auto it = fReservationSiteMap.find(instr);
-  if (it != fReservationSiteMap.end() && !it->second->empty()) {
-    auto Site = it->second;
-    if (store)
-      Site->insertStore(value);
-    else
-      Site->insertLoad(value);
-    //TODO: might be doing extra processing
-    mergeQueue.push(it);
-  } else {
-    auto preds = getPrevious(instr);
-    for (auto pred : preds) {
-      auto block = instr->getParent();
-      auto func = block->getParent();
-
-      auto fv = value;
-      if (getFirstInstruction(func) == instr) {
-        CallInst* ci = dyn_cast<CallInst>(pred);
-        DEBUG_WITH_TYPE("compress", errs() << "Moving to callSiteBlock: " << ci->getParent() << "\n");
-        if (Argument *arg = dyn_cast<Argument>(value)) {
-          if (arg->getParent() == func) {
-            fv = ci->getArgOperand(arg->getArgNo());
-            if (Constant *c = dyn_cast<Constant>(fv)) {
-              if (c->isNullValue()) {
-                continue;
-              }
-            }
-          }
-        }
-      }
-
-      mergeValue(pred, fv, store, mergeQueue);
-    } 
-  }
-}
-
-ReserveTM::ReserveTMPass::CompressionResult ReserveTM::ReserveTMPass::canMergeValue(Instruction* instr, Value* value, InstructionSet& visited, bool initial) {
+std::set<ReservationSite*> ReserveTM::ReserveTMPass::canMergeValue(Instruction* instr, Value* value, InstructionSet& visited, bool initial) {
+  ReservationSiteSet RetVal;
   auto inserted = visited.insert(instr);
   if (!inserted.second)
-    return FAIL;
+    return RetVal;
 
   if (!initial) {
     //TODO: this is only valid if the funciton has absolutely no reservations
     if (CallInst* ci = dyn_cast<CallInst>(instr)) {
       auto it = fFunctionCalls.find(ci);
       if (it != fFunctionCalls.end())
-        return FAIL;
+        return RetVal;
     }
 
     if (instr == value) {
-      return FAIL;
+      if (getenv("RESERVETM_DISABLE_MOVE")) {
+        return RetVal;
+      }
+      auto NewInstr = moveUp(instr);
+      if (NewInstr) {
+        ++num_merge_definition_moves;
+        DEBUG_WITH_TYPE("merge", errs() << "Merge processing moved Instr: (" << *instr << ") before Intr: (" << *NewInstr << ")\n");
+        visited.erase(inserted.first);
+        return canMergeValue(NewInstr, value, visited, initial);
+      } else {
+        ++num_merge_aborts_from_definition;
+      }
+      return RetVal;
     }
 
     auto it = fReservationSiteMap.find(instr);
@@ -1148,13 +1173,23 @@ ReserveTM::ReserveTMPass::CompressionResult ReserveTM::ReserveTMPass::canMergeVa
       assert(Site);
 
       if (Site->size()) {
-        return SUCCESS_INTRA_PROCEDURAL;
+        RetVal.insert(Site);
+        return RetVal;
       }
     }
   }
 
   CompressionResult canMerge = FAIL;
-  auto preds = getPrevious(instr);
+  // First try within the block
+  auto preds = getPrevious(instr, true);
+  for (auto pred : preds) {
+    RetVal = canMergeValue(pred, value, visited);
+    return RetVal;
+  }
+
+  // TODO: cross block traffic
+#if 0
+  preds = getPrevious(instr);
   for (auto pred : preds) {
     auto block = instr->getParent();
     auto func = block->getParent();
@@ -1183,6 +1218,7 @@ ReserveTM::ReserveTMPass::CompressionResult ReserveTM::ReserveTMPass::canMergeVa
         BasicBlock *succ = *si;
 
         if (succ != block) {
+          DEBUG_WITH_TYPE("merge", errs() << "Merge Processing stopped due to partial path at Instr: " << *instr << "\n");
           ++num_merge_aborts_from_partial_paths;
           return FAIL;
         }
@@ -1198,15 +1234,16 @@ ReserveTM::ReserveTMPass::CompressionResult ReserveTM::ReserveTMPass::canMergeVa
       }
     }
   }
+#endif
 
-  return canMerge;
+  return RetVal;
 }
 
 bool ReserveTM::ReserveTMPass::mergeBlock(InstructionMap::const_iterator entry, std::queue<InstructionMap::const_iterator>& mergeQueue) {
   auto instr = (*entry).first;
   auto Site = (*entry).second;
 
-  DEBUG_WITH_TYPE("merge", errs() << "Merge Processing for Instr: " << instr << "\n");
+  DEBUG_WITH_TYPE("merge", errs() << "Merge Processing for Instr: " << *instr << "\n");
   //TODO: need to stop on defining instance
   //TODO: need to stop when at the highest transaction
 
@@ -1224,26 +1261,31 @@ bool ReserveTM::ReserveTMPass::mergeBlock(InstructionMap::const_iterator entry, 
     bit_vector = bit_vector >> 1;
 
     visited.clear();
-    CompressionResult canMerge = canMergeValue(instr, value, visited, true);
+    auto MergeSites = canMergeValue(instr, value, visited, true);
 
-    if (canMerge == FAIL)
+    if (MergeSites.empty())
       break;
 
     if (store) {
       ++num_stores_merged;
-      if (canMerge == SUCCESS_INTER_PROCEDURAL)
-        ++num_stores_merged_inter_procedurally;
+      //TODO: fix stat
+      //if (canMerge == SUCCESS_INTER_PROCEDURAL)
+      //  ++num_stores_merged_inter_procedurally;
       Site->compressWithPreviousStore(value);
     } else {
       ++num_loads_merged;
-      if (canMerge == SUCCESS_INTER_PROCEDURAL)
-        ++num_loads_merged_inter_procedurally;
+      //TODO: fix stat
+      //if (canMerge == SUCCESS_INTER_PROCEDURAL)
+      //  ++num_loads_merged_inter_procedurally;
       Site->compressWithPreviousLoad(value);
     }
 
-    auto preds = getPrevious(instr);
-    for (auto pred : preds) {
-      mergeValue(pred, value, store, mergeQueue);
+    for (auto MergeSite : MergeSites) {
+      DEBUG_WITH_TYPE("merge", errs() << "Merged site at Instr: (" << *instr << ") into site at Intr: (" << *MergeSite->Instr << ")\n");
+      if (store)
+        MergeSite->insertStore(value);
+      else
+        MergeSite->insertLoad(value);
     }
   }
 
