@@ -82,6 +82,7 @@ uint32_t num_skippable_undo_log_entries;
 uint32_t just_logged;    
 uint32_t num_skipped_undo_log_entries;
 uint32_t num_dynamic_merges;
+uint32_t num_reserve_aborts[4];
 public:
 bool started;
 scope_t* volatile scope;      // used to roll back; also flag for isTxnl

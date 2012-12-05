@@ -131,9 +131,9 @@ namespace stm
         num_writer_stall_loops(0),
      num_undo_log_entries(0),
        num_skippable_undo_log_entries(0),
-       num_dynamic_merges(0),
 just_logged(0),	
 num_skipped_undo_log_entries(0),
+       num_dynamic_merges(0),
 started(false),
         scope(NULL),
         start_time(0), tmlHasLock(false), undo_log(64), vlist(64), writes(64),
@@ -149,6 +149,10 @@ started(false),
         nanorecs(64), begin_wait(0), strong_HG(),
         irrevocable(false)
   {
+    num_reserve_aborts[0] = 0;
+    num_reserve_aborts[1] = 0;
+    num_reserve_aborts[2] = 0;
+    num_reserve_aborts[3] = 0;
       // prevent new txns from starting.
       while (true) {
           int i = curr_policy.ALG_ID;
@@ -361,6 +365,10 @@ void begin(TxThread* tx, scope_t* s, uint32_t /*abort_flags*/)
 		    << "; nsule: " << threads[i]->num_skippable_undo_log_entries
 		    << "; nsdule: " << threads[i]->num_skipped_undo_log_entries
 		    << "; dm: " << threads[i]->num_dynamic_merges
+		    << "; nra1: " << threads[i]->num_reserve_aborts[0]
+		    << "; nra2: " << threads[i]->num_reserve_aborts[1]
+		    << "; nra3: " << threads[i]->num_reserve_aborts[2]
+		    << "; nra4: " << threads[i]->num_reserve_aborts[3]
                     << std::endl;
           threads[i]->abort_hist.dump();
           rw_txns += threads[i]->num_commits;

@@ -516,7 +516,7 @@ bool ReserveTM::ReserveTMPass::analyzeFunction(Function * const function,
                 //    DEBUG_WITH_TYPE("analyze", errs() << "Function Attributes: " << called->getAttributes().getFnAttributes().getAsString() << "\n");
 #if 1
                 if (replaceInstrumentation) {
-                  Instruction *newI = new LoadInst(arg, "newRead", false);
+                  Instruction *newI = new LoadInst(arg, "newRead");
                   ReplaceInstWithInst(ci, newI);
                   instr_i = inst_begin(function);
                   while (&*instr_i != newI) {
@@ -541,7 +541,7 @@ bool ReserveTM::ReserveTMPass::analyzeFunction(Function * const function,
                 //    DEBUG_WITH_TYPE("analyze", errs() << "Function Attributes: " << called->getAttributes().getFnAttributes().getAsString() << "\n");
 #if 1
                 if (replaceInstrumentation) {
-                  Instruction *newI = new StoreInst(ci->getArgOperand(1), arg, "newWrite", false);
+                  Instruction *newI = new StoreInst(ci->getArgOperand(1), arg, "newWrite");
                   ReplaceInstWithInst(ci, newI);
                   instr_i = inst_begin(function);
                   while (&*instr_i != newI) {
@@ -1776,7 +1776,7 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
       args[0] = Site->tx;
       args[1] = ConstantInt::get(IntegerType::get(M.getContext(), 32), bit_vector, true);
       unsigned cur_entry = num_entries + 2;
-      args[cur_entry++] = ConstantInt::get(IntegerType::get(M.getContext(), 32), Site->upcomingInstructions(), true);
+      args[cur_entry++] = ConstantInt::get(IntegerType::get(M.getContext(), 32), num_entries, true);
       args[cur_entry++] = ConstantInt::get(IntegerType::get(M.getContext(), 32), Site->upcomingReads(), true);
       args[cur_entry++] = ConstantInt::get(IntegerType::get(M.getContext(), 32), Site->upcomingWrites(), true);
       CallInst::Create(stm_reserve[num_entries - 1], ArrayRef<Value*>(args, num_entries + 5), "", instr);

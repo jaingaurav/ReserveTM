@@ -313,8 +313,10 @@ fprintf(stderr, "XXX %d tx= %p, bitmask=%d, addr0=%p, val=%x\n", reads, tx, bitm
           }
 
           // abort if locked
-          if (__builtin_expect(ivt.fields.lock, 0))
+          if (__builtin_expect(ivt.fields.lock, 0)) {
+++tx->num_reserve_aborts[instrs-1];
               tx->tmabort(tx);
+          }
 
           // scale timestamp if ivt is too new, then try again
           uintptr_t newts = timestamp.val;
@@ -333,8 +335,10 @@ fprintf(stderr, "XXX %d tx= %p, bitmask=%d, addr0=%p, val=%x\n", reads, tx, bitm
 
           // common case: uncontended location... try to lock it, abort on fail
           if (ivt.all <= tx->start_time) {
-              if (!bcasptr(&o->v.all, ivt.all, tx->my_lock.all))
+              if (!bcasptr(&o->v.all, ivt.all, tx->my_lock.all)) {
+++tx->num_reserve_aborts[instrs-1];
                   tx->tmabort(tx);
+              }
 
               // save old value, log lock, do the write, and return
               o->p = ivt.all;
@@ -352,8 +356,10 @@ fprintf(stderr, "XXX %d tx= %p, bitmask=%d, addr0=%p, val=%x\n", reads, tx, bitm
           }
 
           // fail if lock held by someone else
-          if (ivt.fields.lock)
+          if (ivt.fields.lock) {
+++tx->num_reserve_aborts[instrs-1];
               tx->tmabort(tx);
+          }
 
           // unlocked but too new... scale forward and try again
           uintptr_t newts = timestamp.val;

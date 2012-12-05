@@ -318,8 +318,10 @@ over = true;
               // drop read lock, wait (with timeout) for lock release
               lock->reader[tx->id-1] = 0;
               while (lock->owner != 0) {
-                  if (++tries > READ_TIMEOUT)
+                  if (++tries > READ_TIMEOUT) {
+++tx->num_reserve_aborts[instrs-1];
                       tx->tmabort(tx);
+                  }
               }
           }
 #ifdef ALG_STATS
@@ -337,8 +339,10 @@ over = true;
 
           // get the write lock, with timeout
           while (!bcas64(&(lock->owner), 0u, tx->id))
-              if (++tries > ACQUIRE_TIMEOUT)
+              if (++tries > ACQUIRE_TIMEOUT) {
+++tx->num_reserve_aborts[instrs-1];
                   tx->tmabort(tx);
+              }
 
           // log the lock, drop any read locks I have
           unsigned long size = tx->w_bytelocks.insert(lock);
@@ -350,8 +354,10 @@ over = true;
           for (int i = 0; i < 15; ++i) {
               tries = 0;
               while (lock_alias[i] != 0)
-                  if (++tries > DRAIN_TIMEOUT)
+                  if (++tries > DRAIN_TIMEOUT) {
+++tx->num_reserve_aborts[instrs-1];
                       tx->tmabort(tx);
+                  }
           }
 
           // add to undo log, do in-place write
