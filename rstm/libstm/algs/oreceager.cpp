@@ -275,17 +275,22 @@ tx->started = true;
   void
   reserverange(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int instrs, int reads, int writes)
   {
+//fprintf(stderr, "reserverange- start: addr0=%p, addr1=%p", addr0, addr1);
     uintptr_t addr = addr0;
 int next = 2;
 int prev = 1; 
     do {
       if (next != prev) {
+//fprintf(stderr, "reserverange- new: addr=%p", addr);
       reserve01(tx, bitmask, addr, instrs, reads, writes);
       prev  = addr >> 3;
       }
+      else {
+//fprintf(stderr, "reserverange- old: addr=%p", addr);
+      }
       addr += size;
       next = addr >> 3;
-    } while (addr != addr1);
+    } while (addr <=  addr1);
   }
   
   void

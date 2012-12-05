@@ -424,6 +424,7 @@ namespace {
       && (func->getName().str().find("sqrt") == std::string::npos)
       && (func->getName().str().find("malloc") == std::string::npos)
       && (func->getName().str().find("_assert") == std::string::npos)
+      && (func->getName().str().find("stmreserverange") == std::string::npos)
       && (func->getName().str().find("pthread") == std::string::npos)) {
       return true;
     }
