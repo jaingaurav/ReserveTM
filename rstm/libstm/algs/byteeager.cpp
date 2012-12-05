@@ -41,6 +41,7 @@ namespace {
       static TM_FASTCALL void write_rw(STM_WRITE_SIG(,,,));
       static TM_FASTCALL void commit_ro(STM_COMMIT_SIG(,));
       static TM_FASTCALL void commit_rw(STM_COMMIT_SIG(,));
+      static TM_FASTCALL void reserverange(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int instrs, int reads, int writes);
       static TM_FASTCALL void reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes);
       static TM_FASTCALL void reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes);
       static TM_FASTCALL void reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes);
@@ -261,6 +262,21 @@ namespace {
       STM_DO_MASKED_WRITE(addr, val, mask);
   }
 
+  void
+  ByteEager::reserverange(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int instrs, int reads, int writes)
+  {
+    uintptr_t addr = addr0;
+int next = 2;
+int prev = 1; 
+    do {
+      if (next != prev) {
+      reserve01(tx, bitmask, addr, instrs, reads, writes);
+      prev  = addr >> 3;
+      }
+      addr += size;
+      next = addr >> 3;
+    } while (addr != addr1);
+  }
   
   void
   ByteEager::reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes)
@@ -484,6 +500,7 @@ namespace stm {
       stms[ByteEager].commit    = ::ByteEager::commit_ro;
       stms[ByteEager].read      = ::ByteEager::read_ro;
       stms[ByteEager].write     = ::ByteEager::write_ro;
+      stms[ByteEager].reserverange = ::ByteEager::reserverange;
       stms[ByteEager].reserve01 = ::ByteEager::reserve01;
       stms[ByteEager].reserve02 = ::ByteEager::reserve02;
       stms[ByteEager].reserve03 = ::ByteEager::reserve03;

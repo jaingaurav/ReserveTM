@@ -150,6 +150,7 @@ scope_t* volatile scope;      // used to roll back; also flag for isTxnl
       TM_FASTCALL void(*tmcommit)(STM_COMMIT_SIG(,));
       TM_FASTCALL void*(*tmread)(STM_READ_SIG(,,));
       TM_FASTCALL void(*tmwrite)(STM_WRITE_SIG(,,,));
+      TM_FASTCALL void(*tmreserverange)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int instrs, int reads, int writes);
       TM_FASTCALL void(*tmreserve01)(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes);
       TM_FASTCALL void(*tmreserve02)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes);
       TM_FASTCALL void(*tmreserve03)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes);
@@ -272,6 +273,21 @@ started = false;
               ++num_redundant_reserved_writes;
       }
 
+      TM_FASTCALL void reserverange(int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int instrs, int reads, int writes)
+      {
+#if STATS_ACTIVE
+          ++num_reserved_calls;
+          if (bitmask & (1 << 0)) {
+              reserveWrite((void*)addr0);
+          } else {
+              reserveRead((void*)addr0);
+          }
+#endif
+#if RESERVES_ACTIVE
+          tmreserverange(this, bitmask, addr0, addr1, size, instrs, reads, writes);
+#endif
+      }
+
       TM_FASTCALL void reserve01(int bitmask, uintptr_t addr0, int instrs, int reads, int writes)
       {
 #if STATS_ACTIVE
@@ -377,11 +393,13 @@ started = false;
       }
 
       void setReserve(
+          TM_FASTCALL void(*reserverange)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int instrs, int reads, int writes),
           TM_FASTCALL void(*reserve01)(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes),
       TM_FASTCALL void(*reserve02)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes),
       TM_FASTCALL void(*reserve03)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes),
       TM_FASTCALL void(*reserve04)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, int instrs, int reads, int writes))
       {
+          tmreserverange = reserverange;
           tmreserve01 = reserve01;
           tmreserve02 = reserve02;
           tmreserve03 = reserve03;

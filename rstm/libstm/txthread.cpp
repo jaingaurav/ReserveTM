@@ -18,6 +18,19 @@
 #include "inst.hpp"
 
 #if 1
+extern "C" void stmreserverange(stm::TxThread* tx,
+  int bitmask,
+    uintptr_t addr0,
+    uintptr_t addr1,
+    int size,
+    int instrs,
+    int reads,
+    int writes
+    )
+{
+    tx->reserverange(bitmask, addr0, addr1, size, instrs, reads, writes);
+}
+
 extern "C" void stmreserve01(stm::TxThread* tx,
   int bitmask,
     uintptr_t addr0,
