@@ -109,6 +109,7 @@ namespace stm
       void  (*TM_FASTCALL commit)(STM_COMMIT_SIG(,));
       void* (*TM_FASTCALL read)  (STM_READ_SIG(,,));
       void  (*TM_FASTCALL write) (STM_WRITE_SIG(,,,));
+      void  (*TM_FASTCALL reserverange)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int instrs, int reads, int writes);
       void  (*TM_FASTCALL reserve01)(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes);
       void  (*TM_FASTCALL reserve02)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes);
       void  (*TM_FASTCALL reserve03)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes);

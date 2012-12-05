@@ -74,6 +74,7 @@ namespace {
 
   TM_FASTCALL void* read(STM_READ_SIG(,,));
   TM_FASTCALL void write(STM_WRITE_SIG(,,,));
+      static TM_FASTCALL void reserverange(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int instrs, int reads, int writes);
       static TM_FASTCALL void reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes);
       static TM_FASTCALL void reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes);
       static TM_FASTCALL void reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes);
@@ -99,6 +100,7 @@ namespace {
 
       stm::stms[id].read      = read;
       stm::stms[id].write     = write;
+      stm::stms[id].reserverange = reserverange;
       stm::stms[id].reserve01 = reserve01;
       stm::stms[id].reserve02 = reserve02;
       stm::stms[id].reserve03 = reserve03;
@@ -270,6 +272,22 @@ tx->started = true;
 #endif
   }
 
+  void
+  reserverange(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int instrs, int reads, int writes)
+  {
+    uintptr_t addr = addr0;
+int next = 2;
+int prev = 1; 
+    do {
+      if (next != prev) {
+      reserve01(tx, bitmask, addr, instrs, reads, writes);
+      prev  = addr >> 3;
+      }
+      addr += size;
+      next = addr >> 3;
+    } while (addr != addr1);
+  }
+  
   void
   reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes)
   {
