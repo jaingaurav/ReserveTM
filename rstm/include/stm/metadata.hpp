@@ -97,7 +97,7 @@ namespace stm
   struct bytelock_t
   {
       volatile uint64_t      owner;
-      volatile unsigned char reader[CACHELINE_BYTES - sizeof(uint32_t)];
+      volatile unsigned char reader[(CACHELINE_BYTES*2) - sizeof(uint64_t)];
 
       /**
        *  Setting the read byte is platform-specific, so we make it a method

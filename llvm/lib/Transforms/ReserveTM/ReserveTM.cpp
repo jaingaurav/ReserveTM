@@ -54,10 +54,15 @@ STATISTIC(num_functions_with_memory_dependancies,       "3.2    Functions with m
 STATISTIC(num_functions_instrumented,                   "3.3    Functions instrumented");
 STATISTIC(num_functions_pointer_calls,                  "3.4    Functions pointer calls");
 
+#define MAX_RESERVATIONS 7
+
 STATISTIC(num_stm_reserve_1,                            "4.1    STM reservations with 1 entry");
 STATISTIC(num_stm_reserve_2,                            "4.2    STM reservations with 2 entries");
 STATISTIC(num_stm_reserve_3,                            "4.3    STM reservations with 3 entries");
 STATISTIC(num_stm_reserve_4,                            "4.4    STM reservations with 4 entries");
+STATISTIC(num_stm_reserve_5,                            "4.5    STM reservations with 5 entries");
+STATISTIC(num_stm_reserve_6,                            "4.6    STM reservations with 6 entries");
+STATISTIC(num_stm_reserve_7,                            "4.7    STM reservations with 7 entries");
 
 STATISTIC(num_loads_compressed,                         "5.1.1  Loads compressed");
 STATISTIC(num_loads_compressed_inter_procedurally,      "5.1.2  Loads compressed inter-procedurally");
@@ -167,10 +172,10 @@ namespace ReserveTM {
           //TODO: be more rigorous
           return isFromAlloc(bc->getOperand(0));
         } else if (CallInst *ci = dyn_cast<CallInst>(I)) {
-#if 0
+#if 1
           auto func = ci->getCalledFunction();
           if (func && func->hasName() && ((func->getName().str().find("malloc") != std::string::npos) || (func->getName().str().find("tx_alloc") != std::string::npos))) {
-            return true;
+            RetVal.insert(I);
           }
 #endif
         } else if (isa<AllocaInst>(I)) {
@@ -273,7 +278,10 @@ namespace ReserveTM {
             //prev.insert(--instr_i);
             --instr_i;
             if (GetElementPtrInst *gep = dyn_cast<GetElementPtrInst>(I)) {
-              if (isa<LoadInst>(instr_i) && ( instr_i != gep->getPointerOperand())) {
+              if (isa<LoadInst>(instr_i) && (instr_i != gep->getPointerOperand())) {
+                I->moveBefore(instr_i);
+                return instr_i;
+              } else if (isa<StoreInst>(instr_i)) {
                 I->moveBefore(instr_i);
                 return instr_i;
               }
@@ -309,7 +317,7 @@ namespace ReserveTM {
       //AU.addPreserved<AliasAnalysis>();
     }
 
-    Function* stm_reserve[4];
+    Function* stm_reserve[MAX_RESERVATIONS];
     FunctionSet fTxFunctions;
   };
 }
@@ -424,7 +432,7 @@ namespace {
       && (func->getName().str().find("sqrt") == std::string::npos)
       && (func->getName().str().find("malloc") == std::string::npos)
       && (func->getName().str().find("_assert") == std::string::npos)
-      && (func->getName().str().find("stmreserverange") == std::string::npos)
+      && (func->getName().str().find("stmreserve") == std::string::npos)
       && (func->getName().str().find("pthread") == std::string::npos)) {
       return true;
     }
@@ -437,7 +445,7 @@ namespace {
 using namespace ReserveTM;
 
 ReserveTM::ReserveTMPass::ReserveTMPass() : ModulePass(ID) {
-  for (int i = 0; i < 4; ++i) {
+  for (int i = 0; i < MAX_RESERVATIONS; ++i) {
     stm_reserve[i] = 0;
   }
 }
@@ -517,7 +525,7 @@ bool ReserveTM::ReserveTMPass::analyzeFunction(Function * const function,
                 //    DEBUG_WITH_TYPE("analyze", errs() << "Function Attributes: " << called->getAttributes().getFnAttributes().getAsString() << "\n");
 #if 1
                 if (replaceInstrumentation) {
-                  Instruction *newI = new LoadInst(arg, "newRead");
+                  Instruction *newI = new LoadInst(arg, "newRead", false);
                   ReplaceInstWithInst(ci, newI);
                   instr_i = inst_begin(function);
                   while (&*instr_i != newI) {
@@ -542,7 +550,7 @@ bool ReserveTM::ReserveTMPass::analyzeFunction(Function * const function,
                 //    DEBUG_WITH_TYPE("analyze", errs() << "Function Attributes: " << called->getAttributes().getFnAttributes().getAsString() << "\n");
 #if 1
                 if (replaceInstrumentation) {
-                  Instruction *newI = new StoreInst(ci->getArgOperand(1), arg, "newWrite");
+                  Instruction *newI = new StoreInst(ci->getArgOperand(1), arg, false);
                   ReplaceInstWithInst(ci, newI);
                   instr_i = inst_begin(function);
                   while (&*instr_i != newI) {
@@ -1282,7 +1290,7 @@ bool ReserveTM::ReserveTMPass::mergeBlock(InstructionMap::const_iterator entry, 
     }
 
     for (auto MergeSite : MergeSites) {
-      DEBUG_WITH_TYPE("merge", errs() << "Merged site at Instr: (" << *instr << ") into site at Intr: (" << *MergeSite->Instr << ")\n");
+      DEBUG_WITH_TYPE("merge", errs() << "Merged site at Instr: (" << *instr << " (" << instr->getParent()->getParent()->getName().str() << ")" << ") into site at Intr: (" << *MergeSite->Instr << " (" << MergeSite->Instr->getParent()->getParent()->getName().str() << ")" << ")\n");
       if (store)
         MergeSite->insertStore(value);
       else
@@ -1441,7 +1449,7 @@ bool ReserveTM::ReserveTMPass::calcReadsWrites(BasicBlock* block, uint32_t* inst
 }
 
 bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
-  llvm::Statistic *num_stm_reserve[4];
+  llvm::Statistic *num_stm_reserve[MAX_RESERVATIONS];
   std::queue<Function *> funcQueue;
   FunctionSet fAdded;
 
@@ -1646,7 +1654,7 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
     //if (singleWriter && hasPreviousStore(entry))
     //	++num_reservation_sites_with_previous_store;
 
-    if (getenv("RESERVETM_MERGE"))
+    if (getenv("RESERVETM_MERGE")) //&& (num_reservation_sites_completely_merged < atoi(getenv("MAX_MERGES"))))
       mergeBlock(entry, mergeQueue);
   }
 
@@ -1707,7 +1715,7 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
   }
 
   stm_reserve[0] = dyn_cast<Function>(M.getOrInsertFunction("stmreserve01",
-      Type::getVoidTy(M.getContext()),
+      Type::getInt32Ty(M.getContext()),
       txType,
       Type::getInt32Ty(M.getContext()),
       Type::getInt64Ty(M.getContext()),
@@ -1717,7 +1725,7 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
       NULL));
   num_stm_reserve[0] = &num_stm_reserve_1;
   stm_reserve[1] = dyn_cast<Function>(M.getOrInsertFunction("stmreserve02",
-      Type::getVoidTy(M.getContext()),
+      Type::getInt32Ty(M.getContext()),
       txType,
       Type::getInt32Ty(M.getContext()),
       Type::getInt64Ty(M.getContext()),
@@ -1728,7 +1736,7 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
       NULL));
   num_stm_reserve[1] = &num_stm_reserve_2;
   stm_reserve[2] = dyn_cast<Function>(M.getOrInsertFunction("stmreserve03",
-      Type::getVoidTy(M.getContext()),
+      Type::getInt32Ty(M.getContext()),
       txType,
       Type::getInt32Ty(M.getContext()),
       Type::getInt64Ty(M.getContext()),
@@ -1740,7 +1748,7 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
       NULL));
   num_stm_reserve[2] = &num_stm_reserve_3;
   stm_reserve[3] = dyn_cast<Function>(M.getOrInsertFunction("stmreserve04",
-      Type::getVoidTy(M.getContext()),
+      Type::getInt32Ty(M.getContext()),
       txType,
       Type::getInt32Ty(M.getContext()),
       Type::getInt64Ty(M.getContext()),
@@ -1752,6 +1760,51 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
       Type::getInt32Ty(M.getContext()),
       NULL));
   num_stm_reserve[3] = &num_stm_reserve_4;
+  stm_reserve[4] = dyn_cast<Function>(M.getOrInsertFunction("stmreserve05",
+      Type::getInt32Ty(M.getContext()),
+      txType,
+      Type::getInt32Ty(M.getContext()),
+      Type::getInt64Ty(M.getContext()),
+      Type::getInt64Ty(M.getContext()),
+      Type::getInt64Ty(M.getContext()),
+      Type::getInt64Ty(M.getContext()),
+      Type::getInt64Ty(M.getContext()),
+      Type::getInt32Ty(M.getContext()),
+      Type::getInt32Ty(M.getContext()),
+      Type::getInt32Ty(M.getContext()),
+      NULL));
+  num_stm_reserve[4] = &num_stm_reserve_5;
+  stm_reserve[5] = dyn_cast<Function>(M.getOrInsertFunction("stmreserve06",
+      Type::getInt32Ty(M.getContext()),
+      txType,
+      Type::getInt32Ty(M.getContext()),
+      Type::getInt64Ty(M.getContext()),
+      Type::getInt64Ty(M.getContext()),
+      Type::getInt64Ty(M.getContext()),
+      Type::getInt64Ty(M.getContext()),
+      Type::getInt64Ty(M.getContext()),
+      Type::getInt64Ty(M.getContext()),
+      Type::getInt32Ty(M.getContext()),
+      Type::getInt32Ty(M.getContext()),
+      Type::getInt32Ty(M.getContext()),
+      NULL));
+  num_stm_reserve[5] = &num_stm_reserve_6;
+  stm_reserve[6] = dyn_cast<Function>(M.getOrInsertFunction("stmreserve07",
+      Type::getInt32Ty(M.getContext()),
+      txType,
+      Type::getInt32Ty(M.getContext()),
+      Type::getInt64Ty(M.getContext()),
+      Type::getInt64Ty(M.getContext()),
+      Type::getInt64Ty(M.getContext()),
+      Type::getInt64Ty(M.getContext()),
+      Type::getInt64Ty(M.getContext()),
+      Type::getInt64Ty(M.getContext()),
+      Type::getInt64Ty(M.getContext()),
+      Type::getInt32Ty(M.getContext()),
+      Type::getInt32Ty(M.getContext()),
+      Type::getInt32Ty(M.getContext()),
+      NULL));
+  num_stm_reserve[6] = &num_stm_reserve_7;
 
   // Instrument Pass
   for (auto entry : fReservationSiteMap) {
@@ -1765,6 +1818,8 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
     auto instr = entry.first;
     auto num_entries = Site->numOrderedLoadsStores();
     if (num_entries > 0) {
+      assert(num_entries <= MAX_RESERVATIONS);
+
       DEBUG_WITH_TYPE("instrument", errs() << "Instrumenting Instruction: " << instr << " ");
       DEBUG_WITH_TYPE("instrument", Site->debugPrint());
 

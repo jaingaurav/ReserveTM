@@ -262,10 +262,10 @@ namespace stm {
       stms[TML].commit    = ::TML::commit;
       stms[TML].read      = ::TML::read;
       stms[TML].write     = ::TML::write;
-      stms[TML].reserve01 = ::TML::reserve01;
-      stms[TML].reserve02 = ::TML::reserve02;
-      stms[TML].reserve03 = ::TML::reserve03;
-      stms[TML].reserve04 = ::TML::reserve04;
+      //stms[TML].reserve01 = ::TML::reserve01;
+      //stms[TML].reserve02 = ::TML::reserve02;
+      //stms[TML].reserve03 = ::TML::reserve03;
+      //stms[TML].reserve04 = ::TML::reserve04;
       stms[TML].rollback  = ::TML::rollback;
       stms[TML].irrevoc   = ::TML::irrevoc;
       stms[TML].switcher  = ::TML::onSwitchTo;

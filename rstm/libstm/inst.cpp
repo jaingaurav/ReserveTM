@@ -24,7 +24,7 @@ namespace stm
   {
       // set my read/write/commit pointers
       tx->setReadWriteCommit(stms[new_alg].read, stms[new_alg].write, stms[new_alg].commit);
-      tx->setReserve(stms[new_alg].reserverange, stms[new_alg].reserve01, stms[new_alg].reserve02, stms[new_alg].reserve03, stms[new_alg].reserve04);
+      tx->setReserve(stms[new_alg].reserverange, stms[new_alg].reserve01, stms[new_alg].reserve02, stms[new_alg].reserve03, stms[new_alg].reserve04, stms[new_alg].reserve05, stms[new_alg].reserve06, stms[new_alg].reserve07, stms[new_alg].reserveclear);
   }
 
   /**
@@ -64,7 +64,7 @@ namespace stm
       // set per-thread pointers
       for (unsigned i = 0; i < threadcount.val; ++i) {
           threads[i]->setReadWriteCommit(stms[new_alg].read, stms[new_alg].write, stms[new_alg].commit);
-      threads[i]->setReserve(stms[new_alg].reserverange, stms[new_alg].reserve01, stms[new_alg].reserve02, stms[new_alg].reserve03, stms[new_alg].reserve04);
+      threads[i]->setReserve(stms[new_alg].reserverange, stms[new_alg].reserve01, stms[new_alg].reserve02, stms[new_alg].reserve03, stms[new_alg].reserve04, stms[new_alg].reserve05, stms[new_alg].reserve06, stms[new_alg].reserve07, stms[new_alg].reserveclear);
           threads[i]->consec_aborts  = 0;
       }
 

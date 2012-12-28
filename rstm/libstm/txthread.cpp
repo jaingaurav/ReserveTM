@@ -18,7 +18,7 @@
 #include "inst.hpp"
 
 #if 1
-extern "C" void stmreserverange(stm::TxThread* tx,
+extern "C" int stmreserverange(stm::TxThread* tx,
   int bitmask,
     uintptr_t addr0,
     uintptr_t addr1,
@@ -28,10 +28,10 @@ extern "C" void stmreserverange(stm::TxThread* tx,
     int writes
     )
 {
-    tx->reserverange(bitmask, addr0, addr1, size, instrs, reads, writes);
+    return tx->reserverange(bitmask, addr0, addr1, size, instrs, reads, writes);
 }
 
-extern "C" void stmreserve01(stm::TxThread* tx,
+extern "C" int stmreserve01(stm::TxThread* tx,
   int bitmask,
     uintptr_t addr0,
     int instrs,
@@ -39,10 +39,10 @@ extern "C" void stmreserve01(stm::TxThread* tx,
     int writes
     )
 {
-    tx->reserve01(bitmask, addr0, instrs, reads, writes);
+    return tx->reserve01(bitmask, addr0, instrs, reads, writes);
 }
 
-extern "C" void stmreserve02( stm::TxThread* tx, int bitmask,
+extern "C" int stmreserve02( stm::TxThread* tx, int bitmask,
     uintptr_t addr0,
     uintptr_t addr1,
     int instrs,
@@ -50,10 +50,10 @@ extern "C" void stmreserve02( stm::TxThread* tx, int bitmask,
     int writes
     )
 {
-    tx->reserve02(bitmask, addr0, addr1, instrs, reads, writes);
+    return tx->reserve02(bitmask, addr0, addr1, instrs, reads, writes);
 }
 
-extern "C" void stmreserve03( stm::TxThread* tx, int bitmask,
+extern "C" int stmreserve03( stm::TxThread* tx, int bitmask,
     uintptr_t addr0,
     uintptr_t addr1,
     uintptr_t addr2,
@@ -62,10 +62,10 @@ extern "C" void stmreserve03( stm::TxThread* tx, int bitmask,
     int writes
     )
 {
-    tx->reserve03(bitmask, addr0, addr1, addr2, instrs, reads, writes);
+    return tx->reserve03(bitmask, addr0, addr1, addr2, instrs, reads, writes);
 }
 
-extern "C" void stmreserve04(stm::TxThread* tx, int bitmask,
+extern "C" int stmreserve04(stm::TxThread* tx, int bitmask,
     uintptr_t addr0,
     uintptr_t addr1,
     uintptr_t addr2,
@@ -75,8 +75,59 @@ extern "C" void stmreserve04(stm::TxThread* tx, int bitmask,
     int writes
     )
 {
-    tx->reserve04(bitmask, addr0, addr1, addr2, addr3, instrs, reads, writes);
+    return tx->reserve04(bitmask, addr0, addr1, addr2, addr3, instrs, reads, writes);
 }
+
+extern "C" int stmreserve05(stm::TxThread* tx, int bitmask,
+    uintptr_t addr0,
+    uintptr_t addr1,
+    uintptr_t addr2,
+    uintptr_t addr3,
+    uintptr_t addr4,
+    int instrs,
+    int reads,
+    int writes
+    )
+{
+    return tx->reserve05(bitmask, addr0, addr1, addr2, addr3, addr4, instrs, reads, writes);
+}
+
+extern "C" int stmreserve06(stm::TxThread* tx, int bitmask,
+    uintptr_t addr0,
+    uintptr_t addr1,
+    uintptr_t addr2,
+    uintptr_t addr3,
+    uintptr_t addr4,
+    uintptr_t addr5,
+    int instrs,
+    int reads,
+    int writes
+    )
+{
+    return tx->reserve06(bitmask, addr0, addr1, addr2, addr3, addr4, addr5, instrs, reads, writes);
+}
+
+extern "C" int stmreserve07(stm::TxThread* tx, int bitmask,
+    uintptr_t addr0,
+    uintptr_t addr1,
+    uintptr_t addr2,
+    uintptr_t addr3,
+    uintptr_t addr4,
+    uintptr_t addr5,
+    uintptr_t addr6,
+    int instrs,
+    int reads,
+    int writes
+    )
+{
+    return tx->reserve07(bitmask, addr0, addr1, addr2, addr3, addr4, addr5, addr6, instrs, reads, writes);
+}
+
+extern "C" int stmreserveclear(stm::TxThread* tx) {
+    return tx->reserveclear();
+}
+
+
 #endif
 
 using namespace stm;
@@ -162,10 +213,12 @@ started(false),
         nanorecs(64), begin_wait(0), strong_HG(),
         irrevocable(false)
   {
-    num_reserve_aborts[0] = 0;
-    num_reserve_aborts[1] = 0;
-    num_reserve_aborts[2] = 0;
-    num_reserve_aborts[3] = 0;
+for (int i = 0; i < 7; ++i)
+{
+    num_reserve_aborts[i] = 0;
+    seq_num_r[i] = 0;
+    seq_num_w[i] = 0;
+}
       // prevent new txns from starting.
       while (true) {
           int i = curr_policy.ALG_ID;
@@ -382,6 +435,23 @@ void begin(TxThread* tx, scope_t* s, uint32_t /*abort_flags*/)
 		    << "; nra2: " << threads[i]->num_reserve_aborts[1]
 		    << "; nra3: " << threads[i]->num_reserve_aborts[2]
 		    << "; nra4: " << threads[i]->num_reserve_aborts[3]
+		    << "; nra5: " << threads[i]->num_reserve_aborts[4]
+		    << "; nra6: " << threads[i]->num_reserve_aborts[5]
+		    << "; nra7: " << threads[i]->num_reserve_aborts[6]
+		    << "; snr1: " << threads[i]->seq_num_r[0]
+		    << "; snr2: " << threads[i]->seq_num_r[1]
+		    << "; snr3: " << threads[i]->seq_num_r[2]
+		    << "; snr4: " << threads[i]->seq_num_r[3]
+		    << "; snr5: " << threads[i]->seq_num_r[4]
+		    << "; snr6: " << threads[i]->seq_num_r[5]
+		    << "; snr7: " << threads[i]->seq_num_r[6]
+		    << "; snw1: " << threads[i]->seq_num_w[0]
+		    << "; snw2: " << threads[i]->seq_num_w[1]
+		    << "; snw3: " << threads[i]->seq_num_w[2]
+		    << "; snw4: " << threads[i]->seq_num_w[3]
+		    << "; snw5: " << threads[i]->seq_num_w[4]
+		    << "; snw6: " << threads[i]->seq_num_w[5]
+		    << "; snw7: " << threads[i]->seq_num_w[6]
                     << std::endl;
           threads[i]->abort_hist.dump();
           rw_txns += threads[i]->num_commits;

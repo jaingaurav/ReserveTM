@@ -190,13 +190,13 @@ namespace stm
 namespace stm
 {
   template <typename T>
-  inline T stm_read(T* addr, TxThread* thread)
+  __attribute__((noinline)) T stm_read(T* addr, TxThread* thread)
   {
       return DISPATCH<T, sizeof(T)>::read(addr, thread);
   }
 
   template <typename T>
-  inline void stm_write(T* addr, T val, TxThread* thread)
+  __attribute__((noinline)) void stm_write(T* addr, T val, TxThread* thread)
   {
       DISPATCH<T, sizeof(T)>::write(addr, val, thread);
   }
