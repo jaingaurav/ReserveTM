@@ -1833,12 +1833,11 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
       args[1] = ConstantInt::get(IntegerType::get(M.getContext(), 32), bit_vector, true);
       unsigned cur_entry = num_entries + 2;
       args[cur_entry++] = ConstantInt::get(IntegerType::get(M.getContext(), 32), num_entries, true);
-      args[cur_entry++] = ConstantInt::get(IntegerType::get(M.getContext(), 32), Site->upcomingReads(), true);
-      args[cur_entry++] = ConstantInt::get(IntegerType::get(M.getContext(), 32), Site->upcomingWrites(), true);
+      args[cur_entry++] = ConstantInt::get(IntegerType::get(M.getContext(), 32), Site->upcomingInstructions(), true);
+      args[cur_entry++] = ConstantInt::get(IntegerType::get(M.getContext(), 32), num_reservation_sites_instrumented++, true);
       CallInst::Create(stm_reserve[num_entries - 1], ArrayRef<Value*>(args, num_entries + 5), "", instr);
 
       ++(*num_stm_reserve[num_entries - 1]);
-      ++num_reservation_sites_instrumented;
     } else {
       ++num_reservation_sites_skipped;
     }

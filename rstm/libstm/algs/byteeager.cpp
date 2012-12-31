@@ -44,19 +44,19 @@ namespace {
     static TM_FASTCALL void write_rw(STM_WRITE_SIG(,,,));
     static TM_FASTCALL void commit_ro(STM_COMMIT_SIG(,));
     static TM_FASTCALL void commit_rw(STM_COMMIT_SIG(,));
-    static TM_FASTCALL bool reserve(TxThread* tx, bool write, uintptr_t elem, int instrs, int reads, int writes);
-    static TM_FASTCALL int reserverange(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int instrs, int reads, int writes);
-    static TM_FASTCALL int reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes);
-    static TM_FASTCALL int reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes);
-    static TM_FASTCALL int reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes);
-    static TM_FASTCALL int reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, int instrs, int reads, int writes);
-    static TM_FASTCALL int reserve05(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, uintptr_t addr4, int instrs, int reads, int writes);
-    static TM_FASTCALL int reserve06(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, uintptr_t addr4, uintptr_t addr5, int instrs, int reads, int writes);
-    static TM_FASTCALL int reserve07(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, uintptr_t addr4, uintptr_t addr5, uintptr_t addr6, int instrs, int reads, int writes);
+    static TM_FASTCALL int reserve(TxThread* tx, bool write, uintptr_t elem, int numAddrs, int upcomingInstructions, int id);
+    static TM_FASTCALL int reserverange(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int numAddrs, int upcomingInstructions, int id);
+    static TM_FASTCALL int reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int numAddrs, int upcomingInstructions, int id);
+    static TM_FASTCALL int reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int numAddrs, int upcomingInstructions, int id);
+    static TM_FASTCALL int reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int numAddrs, int upcomingInstructions, int id);
+    static TM_FASTCALL int reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, int numAddrs, int upcomingInstructions, int id);
+    static TM_FASTCALL int reserve05(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, uintptr_t addr4, int numAddrs, int upcomingInstructions, int id);
+    static TM_FASTCALL int reserve06(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, uintptr_t addr4, uintptr_t addr5, int numAddrs, int upcomingInstructions, int id);
+    static TM_FASTCALL int reserve07(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, uintptr_t addr4, uintptr_t addr5, uintptr_t addr6, int numAddrs, int upcomingInstructions, int id);
     static TM_FASTCALL int reserveclear(TxThread* tx);
 
 
-    static void logAbort(TxThread* tx, bool write);
+    static void logAbort(TxThread* tx, bool write, int type);
     static stm::scope_t* rollback(STM_ROLLBACK_SIG(,,,));
     static bool irrevoc(STM_IRREVOC_SIG(,));
     static void onSwitchTo();
@@ -86,7 +86,7 @@ namespace {
     return false;
   }
 
-  void ByteEager::logAbort(TxThread* tx, bool write)
+  void ByteEager::logAbort(TxThread* tx, bool write, int type)
   {
     int index = 6;
     if (tx->seq_num < 2) {
@@ -107,13 +107,24 @@ namespace {
     else
       ++tx->seq_num_r[index];
 
+    switch (type) {
+      case 1:
+        ++tx->num_read_aborts[index];
+        break;
+      case 2:
+        ++tx->num_acquire_aborts[index];
+        break;
+      case 3:
+        ++tx->num_drain_aborts[index];
+        break;
+    }
+
   }
 
   /**
    *  ByteEager commit (read-only):
    */
-  void
-  ByteEager::commit_ro(STM_COMMIT_SIG(tx,))
+  void ByteEager::commit_ro(STM_COMMIT_SIG(tx,))
   {
     // read-only... release read locks
     foreach (ByteLockList, i, tx->r_bytelocks)
@@ -129,8 +140,7 @@ namespace {
   /**
    *  ByteEager commit (writing context):
    */
-  void
-  ByteEager::commit_rw(STM_COMMIT_SIG(tx,))
+  void ByteEager::commit_rw(STM_COMMIT_SIG(tx,))
   {
     // release write locks, then read locks
     foreach (ByteLockList, i, tx->w_bytelocks)
@@ -153,165 +163,160 @@ namespace {
   /**
    *  ByteEager read (read-only transaction)
    */
-  void*
-    ByteEager::read_ro(STM_READ_SIG(tx,addr,))
-    {
-      uint32_t tries = 0;
-      bytelock_t* lock = get_bytelock(addr);
+  void* ByteEager::read_ro(STM_READ_SIG(tx,addr,))
+  {
+    uint32_t tries = 0;
+    bytelock_t* lock = get_bytelock(addr);
 
-      // do I have a read lock?
-      if (lock->reader[tx->id-1] == 1)
+    // do I have a read lock?
+    if (lock->reader[tx->id-1] == 1)
+      return *addr;
+
+    // log this location
+    tx->r_bytelocks.insert(lock);
+
+    // now try to get a read lock
+    while (true) {
+      // mark my reader byte
+      lock->set_read_byte(tx->id-1);
+
+      // if nobody has the write lock, we're done
+      if (__builtin_expect(lock->owner == 0, true))
         return *addr;
 
-      // log this location
-      tx->r_bytelocks.insert(lock);
-
-      // now try to get a read lock
-      while (true) {
-        // mark my reader byte
-        lock->set_read_byte(tx->id-1);
-
-        // if nobody has the write lock, we're done
-        if (__builtin_expect(lock->owner == 0, true))
-          return *addr;
-
-        // drop read lock, wait (with timeout) for lock release
-        lock->reader[tx->id-1] = 0;
-        while (lock->owner != 0) {
-          if (++tries > READ_TIMEOUT)
-            tx->tmabort(tx);
-        }
+      // drop read lock, wait (with timeout) for lock release
+      lock->reader[tx->id-1] = 0;
+      while (lock->owner != 0) {
+        if (++tries > READ_TIMEOUT)
+          tx->tmabort(tx);
       }
     }
+  }
 
   /**
    *  ByteEager read (writing transaction)
    */
-  void*
-    ByteEager::read_rw(STM_READ_SIG(tx,addr,))
-    {
-      uint32_t tries = 0;
-      bytelock_t* lock = get_bytelock(addr);
+  void* ByteEager::read_rw(STM_READ_SIG(tx,addr,))
+  {
+    uint32_t tries = 0;
+    bytelock_t* lock = get_bytelock(addr);
 
-      // do I have the write lock?
-      if (lock->owner == tx->id)
+    // do I have the write lock?
+    if (lock->owner == tx->id)
+      return *addr;
+
+    // do I have a read lock?
+    if (lock->reader[tx->id-1] == 1)
+      return *addr;
+
+    // log this location
+    tx->r_bytelocks.insert(lock);
+
+    // now try to get a read lock
+    while (true) {
+      // mark my reader byte
+      lock->set_read_byte(tx->id-1);
+      // if nobody has the write lock, we're done
+      if (__builtin_expect(lock->owner == 0, true))
         return *addr;
 
-      // do I have a read lock?
-      if (lock->reader[tx->id-1] == 1)
-        return *addr;
-
-      // log this location
-      tx->r_bytelocks.insert(lock);
-
-      // now try to get a read lock
-      while (true) {
-        // mark my reader byte
-        lock->set_read_byte(tx->id-1);
-        // if nobody has the write lock, we're done
-        if (__builtin_expect(lock->owner == 0, true))
-          return *addr;
-
-        // drop read lock, wait (with timeout) for lock release
-        lock->reader[tx->id-1] = 0;
-        while (lock->owner != 0)
-          if (++tries > READ_TIMEOUT)
-            tx->tmabort(tx);
-      }
+      // drop read lock, wait (with timeout) for lock release
+      lock->reader[tx->id-1] = 0;
+      while (lock->owner != 0)
+        if (++tries > READ_TIMEOUT)
+          tx->tmabort(tx);
     }
+  }
 
   /**
    *  ByteEager write (read-only context)
    */
-  void
-    ByteEager::write_ro(STM_WRITE_SIG(tx,addr,val,mask))
-    {
-      uint32_t tries = 0;
-      bytelock_t* lock = get_bytelock(addr);
+  void ByteEager::write_ro(STM_WRITE_SIG(tx,addr,val,mask))
+  {
+    uint32_t tries = 0;
+    bytelock_t* lock = get_bytelock(addr);
 
-      // get the write lock, with timeout
-      while (!bcas64(&(lock->owner), 0u, tx->id))
-        if (++tries > ACQUIRE_TIMEOUT)
+    // get the write lock, with timeout
+    while (!bcas64(&(lock->owner), 0u, tx->id))
+      if (++tries > ACQUIRE_TIMEOUT)
+        tx->tmabort(tx);
+
+    // log the lock, drop any read locks I have
+    tx->w_bytelocks.insert(lock);
+    lock->reader[tx->id-1] = 0;
+
+    // wait (with timeout) for readers to drain out
+    // (read 4 bytelocks at a time)
+    volatile uint32_t* lock_alias = (volatile uint32_t*)&lock->reader[0];
+    for (int i = 0; i < 16; ++i) {
+      tries = 0;
+      while (lock_alias[i] != 0)
+        if (++tries > DRAIN_TIMEOUT)
           tx->tmabort(tx);
-
-      // log the lock, drop any read locks I have
-      tx->w_bytelocks.insert(lock);
-      lock->reader[tx->id-1] = 0;
-
-      // wait (with timeout) for readers to drain out
-      // (read 4 bytelocks at a time)
-      volatile uint32_t* lock_alias = (volatile uint32_t*)&lock->reader[0];
-      for (int i = 0; i < 16; ++i) {
-        tries = 0;
-        while (lock_alias[i] != 0)
-          if (++tries > DRAIN_TIMEOUT)
-            tx->tmabort(tx);
-      }
-
-      // add to undo log, do in-place write
-      tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY(addr, *addr, mask)));
-      STM_DO_MASKED_WRITE(addr, val, mask);
-
-      OnFirstWrite(tx, read_rw, write_rw, commit_rw);
     }
+
+    // add to undo log, do in-place write
+    tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY(addr, *addr, mask)));
+    STM_DO_MASKED_WRITE(addr, val, mask);
+
+    OnFirstWrite(tx, read_rw, write_rw, commit_rw);
+  }
 
   /**
    *  ByteEager write (writing context)
    */
-  void
-    ByteEager::write_rw(STM_WRITE_SIG(tx,addr,val,mask))
-    {
-      uint32_t tries = 0;
-      bytelock_t* lock = get_bytelock(addr);
+  void ByteEager::write_rw(STM_WRITE_SIG(tx,addr,val,mask))
+  {
+    uint32_t tries = 0;
+    bytelock_t* lock = get_bytelock(addr);
 
-      // If I have the write lock, add to undo log, do write, return
-      if (lock->owner == tx->id) {
-        tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY(addr, *addr, mask)));
-        STM_DO_MASKED_WRITE(addr, val, mask);
-        return;
-      }
-
-      // get the write lock, with timeout
-      while (!bcas64(&(lock->owner), 0u, tx->id))
-        if (++tries > ACQUIRE_TIMEOUT)
-          tx->tmabort(tx);
-
-      // log the lock, drop any read locks I have
-      tx->w_bytelocks.insert(lock);
-      lock->reader[tx->id-1] = 0;
-
-      // wait (with timeout) for readers to drain out
-      // (read 4 bytelocks at a time)
-      volatile uint32_t* lock_alias = (volatile uint32_t*)&lock->reader[0];
-      for (int i = 0; i < 16; ++i) {
-        tries = 0;
-        while (lock_alias[i] != 0)
-          if (++tries > DRAIN_TIMEOUT)
-            tx->tmabort(tx);
-      }
-
-      // add to undo log, do in-place write
+    // If I have the write lock, add to undo log, do write, return
+    if (lock->owner == tx->id) {
       tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY(addr, *addr, mask)));
       STM_DO_MASKED_WRITE(addr, val, mask);
+      return;
     }
 
-  int
-    ByteEager::reserveclear(TxThread* tx)
-    {
-      // release write locks, then read locks
-      foreach (ByteLockList, i, tx->w_bytelocks)
-        (*i)->owner = 0;
-      foreach (ByteLockList, i, tx->r_bytelocks)
-        (*i)->reader[tx->id-1] = 0;
+    // get the write lock, with timeout
+    while (!bcas64(&(lock->owner), 0u, tx->id))
+      if (++tries > ACQUIRE_TIMEOUT)
+        tx->tmabort(tx);
 
-      // clean-up
-      tx->r_bytelocks.reset();
-      tx->w_bytelocks.reset();
-      tx->undo_log.reset();
-      return 0;
+    // log the lock, drop any read locks I have
+    tx->w_bytelocks.insert(lock);
+    lock->reader[tx->id-1] = 0;
+
+    // wait (with timeout) for readers to drain out
+    // (read 4 bytelocks at a time)
+    volatile uint32_t* lock_alias = (volatile uint32_t*)&lock->reader[0];
+    for (int i = 0; i < 16; ++i) {
+      tries = 0;
+      while (lock_alias[i] != 0)
+        if (++tries > DRAIN_TIMEOUT)
+          tx->tmabort(tx);
     }
 
-  bool ByteEager::reserve(TxThread* tx, bool write, uintptr_t index, int instrs, int reads, int writes)
+    // add to undo log, do in-place write
+    tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY(addr, *addr, mask)));
+    STM_DO_MASKED_WRITE(addr, val, mask);
+  }
+
+  int ByteEager::reserveclear(TxThread* tx)
+  {
+    // release write locks, then read locks
+    foreach (ByteLockList, i, tx->w_bytelocks)
+      (*i)->owner = 0;
+    foreach (ByteLockList, i, tx->r_bytelocks)
+      (*i)->reader[tx->id-1] = 0;
+
+    // clean-up
+    tx->r_bytelocks.reset();
+    tx->w_bytelocks.reset();
+    tx->undo_log.reset();
+    return 0;
+  }
+
+  int ByteEager::reserve(TxThread* tx, bool write, uintptr_t index, int numAddrs, int upcomingInstructions, int id)
   {
 #if 0
     bool over = false;
@@ -332,12 +337,12 @@ namespace {
     if (!write) {
       // do I have the write lock?
       if (lock->owner == tx->id) {
-        return true;
+        return 0;
       }
 
       // do I have a read lock?
       if (lock->reader[tx->id-1] == 1){
-        return true;
+        return 0;
       }
 
       // log this location
@@ -350,36 +355,30 @@ namespace {
 
         // if nobody has the write lock, we're done
         if (__builtin_expect(lock->owner == 0, true)) {
-          return true;
+          return 0;
         }
 
         // drop read lock, wait (with timeout) for lock release
         lock->reader[tx->id-1] = 0;
         while (lock->owner != 0) {
           if (++tries > READ_TIMEOUT) {
-#ifdef STATS
-            ++tx->num_read_aborts[instrs-1];
-#endif
             //TODO: is this safe?
-            lock->reader[tx->id-1] = 0;
-            tx->r_bytelocks.reset();
-            return false;
+            //lock->reader[tx->id-1] = 0;
+            //tx->r_bytelocks.reset();
+            return 1;
           }
         }
       }
     } else {
       // If I have the write lock, add to undo log, do write, return
       if (lock->owner == tx->id) {
-        return true;
+        return 0;
       }
 
       // get the write lock, with timeout
       while (!bcas64(&(lock->owner), 0u, tx->id))
         if (++tries > ACQUIRE_TIMEOUT) {
-#ifdef STATS
-          ++tx->num_acquire_aborts[instrs-1];
-#endif
-          return false;
+          return 2;
         }
 
       // log the lock, drop any read locks I have
@@ -393,14 +392,11 @@ namespace {
         tries = 0;
         while (lock_alias[i] != 0)
           if (++tries > DRAIN_TIMEOUT) {
-#ifdef STATS
-            ++tx->num_drain_aborts[instrs-1];
-#endif
             //TODO: is this safe?
-            lock->owner = 0;
-            lock->reader[tx->id-1] = 0;
-            tx->w_bytelocks.reset();
-            return false;
+            //lock->owner = 0;
+            //lock->reader[tx->id-1] = 0;
+            //tx->w_bytelocks.reset();
+            return 3;
           }
       }
 
@@ -416,17 +412,17 @@ namespace {
         OnFirstWrite(tx, read_rw, write_rw, commit_rw);
     }
 
-    return true;
+    return 0; 
   }
 
-  int ByteEager::reserverange(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int instrs, int reads, int writes)
+  int ByteEager::reserverange(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int numAddrs, int upcomingInstructions, int id)
   {
     uintptr_t addr = addr0;
     int next = 2;
     int prev = 1; 
     do {
       if (next != prev) {
-        reserve01(tx, bitmask, addr, instrs, reads, writes);
+        reserve01(tx, bitmask, addr, numAddrs, upcomingInstructions, id);
         prev  = addr >> 3;
       }
       addr += size;
@@ -435,20 +431,21 @@ namespace {
     return 0;
   }
 
-  int ByteEager::reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes)
+  int ByteEager::reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int numAddrs, int upcomingInstructions, int id)
   {
 #if 0
     foreach (ByteLockList, i, tx->r_bytelocks) {
-        if (((*i)->owner != 0) && ((*i)->owner != tx->id))
-          tx->tmabort(tx);
+      if (((*i)->owner != 0) && ((*i)->owner != tx->id))
+        tx->tmabort(tx);
     }
 #endif
     bool write = bitmask & 1;
     uintptr_t index = get_bytelock_index((void **)addr0);
-    while (!reserve(tx, write, index, instrs, reads, writes)) {
+    int type = 0;
+    while ((type = reserve(tx, write, index, numAddrs, upcomingInstructions, id))) {
       if (tx->seq_num) {
 #ifdef STATS
-        logAbort(tx, write);
+        logAbort(tx, write, type);
 #endif
         tx->tmabort(tx);
       }
@@ -470,20 +467,20 @@ namespace {
 
     ++tx->seq_num;
     if (write) {
-      //if ((!(reads == 0) && (writes == 0))) {
-      tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY((void **)addr0, *((void **)addr0), mask)));
-      //}
+      if (upcomingInstructions) {
+        tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY((void **)addr0, *((void **)addr0), mask)));
+      }
     }
 
     return 1;
   }
 
-  int ByteEager::reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes)
+  int ByteEager::reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int numAddrs, int upcomingInstructions, int id)
   {
     if (addr0 == addr1) {
       ++tx->num_dynamic_merges;
-      if (reserve01(tx, bitmask | (bitmask >> 1), addr0, instrs, reads, writes)) {
-        if (instrs == 2) {
+      if (reserve01(tx, bitmask | (bitmask >> 1), addr0, numAddrs, upcomingInstructions, id)) {
+        if (numAddrs == 2) {
           if (bitmask)
             tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY((void **)addr0, *((void **)addr0), mask)));
         }
@@ -492,9 +489,9 @@ namespace {
     }
     else
     {
-      if (reserve01(tx, bitmask, addr0, instrs, reads, writes)) {
-        if (reserve01(tx, bitmask>>1, addr1, instrs, reads, writes)) {
-          if (instrs == 2) {
+      if (reserve01(tx, bitmask, addr0, numAddrs, upcomingInstructions, id)) {
+        if (reserve01(tx, bitmask>>1, addr1, numAddrs, upcomingInstructions, id)) {
+          if (numAddrs == 2) {
             if (bitmask & 1)
               tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY((void **)addr0, *((void **)addr0), mask)));
             if (bitmask & 2)
@@ -507,7 +504,7 @@ namespace {
     return 0;
   }
 
-  int ByteEager::reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes)
+  int ByteEager::reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int numAddrs, int upcomingInstructions, int id)
   {
     if (addr0 == addr1) {
       ++tx->num_dynamic_merges;
@@ -515,18 +512,18 @@ namespace {
         bitmask = (bitmask >> 1) | 1;
       else
         bitmask = (bitmask >> 1);
-      return reserve02(tx, bitmask, addr1, addr2, instrs, reads, writes);
+      return reserve02(tx, bitmask, addr1, addr2, numAddrs, upcomingInstructions, id);
     }
     else
     {
-      if (reserve01(tx, bitmask, addr0, instrs, reads, writes)) {
-        return reserve02(tx, bitmask>>1, addr1, addr2, instrs, reads, writes);
+      if (reserve01(tx, bitmask, addr0, numAddrs, upcomingInstructions, id)) {
+        return reserve02(tx, bitmask>>1, addr1, addr2, numAddrs, upcomingInstructions, id);
       }
     }
     return 0;
   }
 
-  int ByteEager::reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, int instrs, int reads, int writes)
+  int ByteEager::reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, int numAddrs, int upcomingInstructions, int id)
   {
     if (addr0 == addr1) {
       ++tx->num_dynamic_merges;
@@ -534,18 +531,18 @@ namespace {
         bitmask = (bitmask >> 1) | 1;
       else
         bitmask = (bitmask >> 1);
-      return reserve03(tx, bitmask, addr1, addr2, addr3, instrs, reads, writes);
+      return reserve03(tx, bitmask, addr1, addr2, addr3, numAddrs, upcomingInstructions, id);
     }
     else
     {
-      if (reserve01(tx, bitmask, addr0, instrs, reads, writes)) {
-        return reserve03(tx, bitmask>>1, addr1, addr2, addr3, instrs, reads, writes);
+      if (reserve01(tx, bitmask, addr0, numAddrs, upcomingInstructions, id)) {
+        return reserve03(tx, bitmask>>1, addr1, addr2, addr3, numAddrs, upcomingInstructions, id);
       }
     }
     return 0;
   }
 
-  int ByteEager::reserve05(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, uintptr_t addr4, int instrs, int reads, int writes)
+  int ByteEager::reserve05(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, uintptr_t addr4, int numAddrs, int upcomingInstructions, int id)
   {
     if (addr0 == addr1) {
       ++tx->num_dynamic_merges;
@@ -553,18 +550,18 @@ namespace {
         bitmask = (bitmask >> 1) | 1;
       else
         bitmask = (bitmask >> 1);
-      return reserve04(tx, bitmask, addr1, addr2, addr3, addr4, instrs, reads, writes);
+      return reserve04(tx, bitmask, addr1, addr2, addr3, addr4, numAddrs, upcomingInstructions, id);
     }
     else
     {
-      if (reserve01(tx, bitmask, addr0, instrs, reads, writes)) {
-        return reserve04(tx, bitmask>>1, addr1, addr2, addr3, addr4, instrs, reads, writes);
+      if (reserve01(tx, bitmask, addr0, numAddrs, upcomingInstructions, id)) {
+        return reserve04(tx, bitmask>>1, addr1, addr2, addr3, addr4, numAddrs, upcomingInstructions, id);
       }
     }
     return 0;
   }
 
-  int ByteEager::reserve06(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, uintptr_t addr4, uintptr_t addr5, int instrs, int reads, int writes)
+  int ByteEager::reserve06(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, uintptr_t addr4, uintptr_t addr5, int numAddrs, int upcomingInstructions, int id)
   {
     if (addr0 == addr1) {
       ++tx->num_dynamic_merges;
@@ -572,18 +569,18 @@ namespace {
         bitmask = (bitmask >> 1) | 1;
       else
         bitmask = (bitmask >> 1);
-      return reserve05(tx, bitmask, addr1, addr2, addr3, addr4, addr5, instrs, reads, writes);
+      return reserve05(tx, bitmask, addr1, addr2, addr3, addr4, addr5, numAddrs, upcomingInstructions, id);
     }
     else
     {
-      if (reserve01(tx, bitmask, addr0, instrs, reads, writes)) {
-        return reserve05(tx, bitmask>>1, addr1, addr2, addr3, addr4, addr5, instrs, reads, writes);
+      if (reserve01(tx, bitmask, addr0, numAddrs, upcomingInstructions, id)) {
+        return reserve05(tx, bitmask>>1, addr1, addr2, addr3, addr4, addr5, numAddrs, upcomingInstructions, id);
       }
     }
     return 0;
   }
 
-  int ByteEager::reserve07(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, uintptr_t addr4, uintptr_t addr5, uintptr_t addr6, int instrs, int reads, int writes)
+  int ByteEager::reserve07(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, uintptr_t addr4, uintptr_t addr5, uintptr_t addr6, int numAddrs, int upcomingInstructions, int id)
   {
     if (addr0 == addr1) {
       ++tx->num_dynamic_merges;
@@ -591,12 +588,12 @@ namespace {
         bitmask = (bitmask >> 1) | 1;
       else
         bitmask = (bitmask >> 1);
-      return reserve06(tx, bitmask, addr1, addr2, addr3, addr4, addr5, addr6, instrs, reads, writes);
+      return reserve06(tx, bitmask, addr1, addr2, addr3, addr4, addr5, addr6, numAddrs, upcomingInstructions, id);
     }
     else
     {
-      if (reserve01(tx, bitmask, addr0, instrs, reads, writes)) {
-        return reserve06(tx, bitmask>>1, addr1, addr2, addr3, addr4, addr5, addr6, instrs, reads, writes);
+      if (reserve01(tx, bitmask, addr0, numAddrs, upcomingInstructions, id)) {
+        return reserve06(tx, bitmask>>1, addr1, addr2, addr3, addr4, addr5, addr6, numAddrs, upcomingInstructions, id);
       }
     }
     return 0;
