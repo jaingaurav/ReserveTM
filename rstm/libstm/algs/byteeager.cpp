@@ -72,7 +72,7 @@ namespace {
 #else // STM_CPU_X86
 #  define READ_TIMEOUT        32
 #  define ACQUIRE_TIMEOUT     128
-#  define DRAIN_TIMEOUT       256
+#  define DRAIN_TIMEOUT       1024
 #endif
 
   /**
