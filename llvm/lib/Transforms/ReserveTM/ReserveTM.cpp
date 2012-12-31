@@ -1671,7 +1671,7 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
 
 
     visited.clear();
-#if 0
+#if 1
     auto instr = entry.first;
     uint32_t reads = 0;
     uint32_t writes = 0;

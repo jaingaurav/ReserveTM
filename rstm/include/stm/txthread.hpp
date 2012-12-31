@@ -82,7 +82,10 @@ uint32_t num_skippable_undo_log_entries;
 uint32_t just_logged;    
 uint32_t num_skipped_undo_log_entries;
 uint32_t num_dynamic_merges;
-uint32_t num_reserve_aborts[7];
+uint32_t num_first_aborts;
+uint32_t num_read_aborts[7];
+uint32_t num_acquire_aborts[7];
+uint32_t num_drain_aborts[7];
 uint32_t seq_num_r[7];
 uint32_t seq_num_w[7];
 public:

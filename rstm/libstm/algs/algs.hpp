@@ -188,6 +188,19 @@ namespace stm
       return &bytelocks[(index>>3) % NUM_STRIPES];
   }
 
+  TM_INLINE
+  inline bytelock_t* get_bytelock_elem(uintptr_t index)
+  {
+      return &bytelocks[index];
+  }
+
+  TM_INLINE
+  inline uintptr_t  get_bytelock_index(void* addr)
+  {
+      uintptr_t index = reinterpret_cast<uintptr_t>(addr);
+      return (index>>3) % NUM_STRIPES;
+  }
+
   /**
    *  Map addresses to bitlock table entries
    */

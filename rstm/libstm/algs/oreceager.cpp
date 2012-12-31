@@ -394,7 +394,7 @@ if (!tx->started)
 
           // abort if locked
           if (__builtin_expect(ivt.fields.lock, 0)) {
-            ++tx->num_reserve_aborts[instrs-1];
+            //++tx->num_reserve_aborts[instrs-1];
 #ifdef SHORT_TRANS      
             if (!tx->started)
               return 0;
@@ -420,7 +420,7 @@ if (!tx->started)
           // common case: uncontended location... try to lock it, abort on fail
           if (ivt.all <= tx->start_time) {
             if (!bcasptr(&o->v.all, ivt.all, tx->my_lock.all)) {
-              ++tx->num_reserve_aborts[instrs-1];
+              //++tx->num_reserve_aborts[instrs-1];
 #ifdef SHORT_TRANS      
             if (!tx->started)
               return 0;
@@ -446,7 +446,7 @@ if (!tx->started)
 
           // fail if lock held by someone else
           if (ivt.fields.lock) {
-            ++tx->num_reserve_aborts[instrs-1];
+            //++tx->num_reserve_aborts[instrs-1];
 #ifdef SHORT_TRANS      
             if (!tx->started)
               return 0;

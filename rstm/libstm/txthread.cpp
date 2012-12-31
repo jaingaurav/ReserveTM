@@ -198,6 +198,7 @@ namespace stm
 just_logged(0),	
 num_skipped_undo_log_entries(0),
        num_dynamic_merges(0),
+       num_first_aborts(0),
 started(false),
         scope(NULL),
         start_time(0), tmlHasLock(false), undo_log(64), vlist(64), writes(64),
@@ -215,7 +216,9 @@ started(false),
   {
 for (int i = 0; i < 7; ++i)
 {
-    num_reserve_aborts[i] = 0;
+    num_read_aborts[i] = 0;
+    num_acquire_aborts[i] = 0;
+    num_drain_aborts[i] = 0;
     seq_num_r[i] = 0;
     seq_num_w[i] = 0;
 }
@@ -431,13 +434,28 @@ void begin(TxThread* tx, scope_t* s, uint32_t /*abort_flags*/)
 		    << "; nsule: " << threads[i]->num_skippable_undo_log_entries
 		    << "; nsdule: " << threads[i]->num_skipped_undo_log_entries
 		    << "; dm: " << threads[i]->num_dynamic_merges
-		    << "; nra1: " << threads[i]->num_reserve_aborts[0]
-		    << "; nra2: " << threads[i]->num_reserve_aborts[1]
-		    << "; nra3: " << threads[i]->num_reserve_aborts[2]
-		    << "; nra4: " << threads[i]->num_reserve_aborts[3]
-		    << "; nra5: " << threads[i]->num_reserve_aborts[4]
-		    << "; nra6: " << threads[i]->num_reserve_aborts[5]
-		    << "; nra7: " << threads[i]->num_reserve_aborts[6]
+		    << "; mfa: " << threads[i]->num_first_aborts
+		    << "; nra1: " << threads[i]->num_read_aborts[0]
+		    << "; nra2: " << threads[i]->num_read_aborts[1]
+		    << "; nra3: " << threads[i]->num_read_aborts[2]
+		    << "; nra4: " << threads[i]->num_read_aborts[3]
+		    << "; nra5: " << threads[i]->num_read_aborts[4]
+		    << "; nra6: " << threads[i]->num_read_aborts[5]
+		    << "; nra7: " << threads[i]->num_read_aborts[6]
+		    << "; naa1: " << threads[i]->num_acquire_aborts[0]
+		    << "; naa2: " << threads[i]->num_acquire_aborts[1]
+		    << "; naa3: " << threads[i]->num_acquire_aborts[2]
+		    << "; naa4: " << threads[i]->num_acquire_aborts[3]
+		    << "; naa5: " << threads[i]->num_acquire_aborts[4]
+		    << "; naa6: " << threads[i]->num_acquire_aborts[5]
+		    << "; naa7: " << threads[i]->num_acquire_aborts[6]
+		    << "; nda1: " << threads[i]->num_drain_aborts[0]
+		    << "; nda2: " << threads[i]->num_drain_aborts[1]
+		    << "; nda3: " << threads[i]->num_drain_aborts[2]
+		    << "; nda4: " << threads[i]->num_drain_aborts[3]
+		    << "; nda5: " << threads[i]->num_drain_aborts[4]
+		    << "; nda6: " << threads[i]->num_drain_aborts[5]
+		    << "; nda7: " << threads[i]->num_drain_aborts[6]
 		    << "; snr1: " << threads[i]->seq_num_r[0]
 		    << "; snr2: " << threads[i]->seq_num_r[1]
 		    << "; snr3: " << threads[i]->seq_num_r[2]
