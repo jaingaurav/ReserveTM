@@ -31,7 +31,7 @@ extern "C" int stmreserverange(stm::TxThread* tx,
   return tx->reserverange(bitmask, addr0, addr1, size, instrs, reads, writes);
 }
 
-extern "C" int stmreserve01(stm::TxThread* tx,
+extern "C" void stmreserve01(stm::TxThread* tx,
   int bitmask,
   uintptr_t addr0,
   int instrs,
@@ -39,10 +39,10 @@ extern "C" int stmreserve01(stm::TxThread* tx,
   int writes
   )
 {
-  return tx->reserve01(bitmask, addr0, instrs, reads, writes);
+  tx->reserve01(bitmask, addr0, instrs, reads, writes);
 }
 
-extern "C" int stmreserve02( stm::TxThread* tx, int bitmask,
+extern "C" void stmreserve02( stm::TxThread* tx, int bitmask,
   uintptr_t addr0,
   uintptr_t addr1,
   int instrs,
@@ -50,10 +50,10 @@ extern "C" int stmreserve02( stm::TxThread* tx, int bitmask,
   int writes
   )
 {
-  return tx->reserve02(bitmask, addr0, addr1, instrs, reads, writes);
+  tx->reserve02(bitmask, addr0, addr1, instrs, reads, writes);
 }
 
-extern "C" int stmreserve03( stm::TxThread* tx, int bitmask,
+extern "C" void stmreserve03( stm::TxThread* tx, int bitmask,
   uintptr_t addr0,
   uintptr_t addr1,
   uintptr_t addr2,
@@ -62,10 +62,10 @@ extern "C" int stmreserve03( stm::TxThread* tx, int bitmask,
   int writes
   )
 {
-  return tx->reserve03(bitmask, addr0, addr1, addr2, instrs, reads, writes);
+  tx->reserve03(bitmask, addr0, addr1, addr2, instrs, reads, writes);
 }
 
-extern "C" int stmreserve04(stm::TxThread* tx, int bitmask,
+extern "C" void stmreserve04(stm::TxThread* tx, int bitmask,
   uintptr_t addr0,
   uintptr_t addr1,
   uintptr_t addr2,
@@ -75,10 +75,10 @@ extern "C" int stmreserve04(stm::TxThread* tx, int bitmask,
   int writes
   )
 {
-  return tx->reserve04(bitmask, addr0, addr1, addr2, addr3, instrs, reads, writes);
+  tx->reserve04(bitmask, addr0, addr1, addr2, addr3, instrs, reads, writes);
 }
 
-extern "C" int stmreserve05(stm::TxThread* tx, int bitmask,
+extern "C" void stmreserve05(stm::TxThread* tx, int bitmask,
   uintptr_t addr0,
   uintptr_t addr1,
   uintptr_t addr2,
@@ -89,10 +89,10 @@ extern "C" int stmreserve05(stm::TxThread* tx, int bitmask,
   int writes
   )
 {
-  return tx->reserve05(bitmask, addr0, addr1, addr2, addr3, addr4, instrs, reads, writes);
+  tx->reserve05(bitmask, addr0, addr1, addr2, addr3, addr4, instrs, reads, writes);
 }
 
-extern "C" int stmreserve06(stm::TxThread* tx, int bitmask,
+extern "C" void stmreserve06(stm::TxThread* tx, int bitmask,
   uintptr_t addr0,
   uintptr_t addr1,
   uintptr_t addr2,
@@ -104,10 +104,10 @@ extern "C" int stmreserve06(stm::TxThread* tx, int bitmask,
   int writes
   )
 {
-  return tx->reserve06(bitmask, addr0, addr1, addr2, addr3, addr4, addr5, instrs, reads, writes);
+  tx->reserve06(bitmask, addr0, addr1, addr2, addr3, addr4, addr5, instrs, reads, writes);
 }
 
-extern "C" int stmreserve07(stm::TxThread* tx, int bitmask,
+extern "C" void stmreserve07(stm::TxThread* tx, int bitmask,
   uintptr_t addr0,
   uintptr_t addr1,
   uintptr_t addr2,
@@ -120,7 +120,7 @@ extern "C" int stmreserve07(stm::TxThread* tx, int bitmask,
   int writes
   )
 {
-  return tx->reserve07(bitmask, addr0, addr1, addr2, addr3, addr4, addr5, addr6, instrs, reads, writes);
+  tx->reserve07(bitmask, addr0, addr1, addr2, addr3, addr4, addr5, addr6, instrs, reads, writes);
 }
 
 extern "C" int stmreserveclear(stm::TxThread* tx) {

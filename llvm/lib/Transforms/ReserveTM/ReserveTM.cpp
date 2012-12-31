@@ -1556,6 +1556,7 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
 
     CallInst* ci = dyn_cast<CallInst>(instr);
 
+    DEBUG_WITH_TYPE("analyze", errs() << "Function pointer at Instr: (" << *instr << " (" << instr->getParent()->getParent()->getName().str() << ")\n");
     assert(AliasMapper::getAliases(ci->getCalledValue(), aliases) && (aliases.size() > 1));
 
 #if 0
@@ -1715,7 +1716,7 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
   }
 
   stm_reserve[0] = dyn_cast<Function>(M.getOrInsertFunction("stmreserve01",
-      Type::getInt32Ty(M.getContext()),
+      Type::getVoidTy(M.getContext()),
       txType,
       Type::getInt32Ty(M.getContext()),
       Type::getInt64Ty(M.getContext()),
@@ -1725,7 +1726,7 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
       NULL));
   num_stm_reserve[0] = &num_stm_reserve_1;
   stm_reserve[1] = dyn_cast<Function>(M.getOrInsertFunction("stmreserve02",
-      Type::getInt32Ty(M.getContext()),
+      Type::getVoidTy(M.getContext()),
       txType,
       Type::getInt32Ty(M.getContext()),
       Type::getInt64Ty(M.getContext()),
@@ -1736,7 +1737,7 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
       NULL));
   num_stm_reserve[1] = &num_stm_reserve_2;
   stm_reserve[2] = dyn_cast<Function>(M.getOrInsertFunction("stmreserve03",
-      Type::getInt32Ty(M.getContext()),
+      Type::getVoidTy(M.getContext()),
       txType,
       Type::getInt32Ty(M.getContext()),
       Type::getInt64Ty(M.getContext()),
@@ -1748,7 +1749,7 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
       NULL));
   num_stm_reserve[2] = &num_stm_reserve_3;
   stm_reserve[3] = dyn_cast<Function>(M.getOrInsertFunction("stmreserve04",
-      Type::getInt32Ty(M.getContext()),
+      Type::getVoidTy(M.getContext()),
       txType,
       Type::getInt32Ty(M.getContext()),
       Type::getInt64Ty(M.getContext()),
@@ -1761,7 +1762,7 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
       NULL));
   num_stm_reserve[3] = &num_stm_reserve_4;
   stm_reserve[4] = dyn_cast<Function>(M.getOrInsertFunction("stmreserve05",
-      Type::getInt32Ty(M.getContext()),
+      Type::getVoidTy(M.getContext()),
       txType,
       Type::getInt32Ty(M.getContext()),
       Type::getInt64Ty(M.getContext()),
@@ -1775,7 +1776,7 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
       NULL));
   num_stm_reserve[4] = &num_stm_reserve_5;
   stm_reserve[5] = dyn_cast<Function>(M.getOrInsertFunction("stmreserve06",
-      Type::getInt32Ty(M.getContext()),
+      Type::getVoidTy(M.getContext()),
       txType,
       Type::getInt32Ty(M.getContext()),
       Type::getInt64Ty(M.getContext()),
@@ -1790,7 +1791,7 @@ bool ReserveTM::ReserveTMPass::runOnModule(Module &M) {
       NULL));
   num_stm_reserve[5] = &num_stm_reserve_6;
   stm_reserve[6] = dyn_cast<Function>(M.getOrInsertFunction("stmreserve07",
-      Type::getInt32Ty(M.getContext()),
+      Type::getVoidTy(M.getContext()),
       txType,
       Type::getInt32Ty(M.getContext()),
       Type::getInt64Ty(M.getContext()),
