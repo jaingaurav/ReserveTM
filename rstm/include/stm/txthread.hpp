@@ -52,6 +52,9 @@ namespace stm
   {
       /*** THESE FIELDS DEAL WITH THE STM IMPLEMENTATIONS ***/
       uint64_t       id;            // per thread id
+      uint64_t       next_id;            // per thread id
+      uint64_t       ticket;
+      uint64_t       tx_num;
       uint32_t       nesting_depth; // nesting; 0 == not in transaction
       WBMMPolicy     allocator;     // buffer malloc/free
       uint32_t       num_commits;   // stats counter: commits
@@ -82,14 +85,28 @@ uint32_t num_skippable_undo_log_entries;
 uint32_t just_logged;    
 uint32_t num_skipped_undo_log_entries;
 uint32_t num_dynamic_merges;
-uint32_t num_first_aborts;
+uint32_t num_saved_log_entries;;
+uint32_t num_first_aborts[7];
 uint32_t num_read_aborts[7];
 uint32_t num_acquire_aborts[7];
 uint32_t num_drain_aborts[7];
 uint32_t seq_num_r[7];
 uint32_t seq_num_w[7];
+uint32_t seq_num_range[7];
+uint32_t range_reserves;
+uint32_t range_reserves_partial;
+uint32_t range_reserve_reader_aborts;
+uint32_t range_reserves_drain_waits;
+uint32_t range_reserves_child_waits;
+uint32_t range_reserve_stranger_aborts;
+uint32_t range_dep_reserves;
+uint32_t range_dep_reserve_fails;
+uint32_t range_dep_waits;
+uint32_t range_dep_transfers;
 public:
 bool started;
+bool have_ticket;
+bool partial_reserve;
 int seq_num;
 scope_t* volatile scope;      // used to roll back; also flag for isTxnl
       uintptr_t      start_time;    // start time of transaction
@@ -112,6 +129,7 @@ scope_t* volatile scope;      // used to roll back; also flag for isTxnl
       volatile uint32_t alive;      // for STMs that allow remote abort
       ByteLockList   r_bytelocks;   // list of all byte locks held for read
       ByteLockList   w_bytelocks;   // all byte locks held for write
+      ByteLockList   range_bytelocks;   // all byte locks held for write
       BitLockList    r_bitlocks;    // list of all bit locks held for read
       BitLockList    w_bitlocks;    // list of all bit locks held for write
       mcs_qnode_t*   my_mcslock;    // for MCS
@@ -156,7 +174,8 @@ scope_t* volatile scope;      // used to roll back; also flag for isTxnl
       TM_FASTCALL void(*tmcommit)(STM_COMMIT_SIG(,));
       TM_FASTCALL void*(*tmread)(STM_READ_SIG(,,));
       TM_FASTCALL void(*tmwrite)(STM_WRITE_SIG(,,,));
-      TM_FASTCALL int(*tmreserverange)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int instrs, int reads, int writes);
+      TM_FASTCALL uintptr_t(*tmreserverange)(TxThread* tx, uintptr_t addr0, uintptr_t addr1);
+      TM_FASTCALL int(*tmreleaserange)(TxThread* tx, uintptr_t addr0, uintptr_t addr1);
       TM_FASTCALL int(*tmreserve01)(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes);
       TM_FASTCALL int(*tmreserve02)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes);
       TM_FASTCALL int(*tmreserve03)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes);
@@ -287,7 +306,7 @@ started = false;
         return tmreserveclear(this);
       }
       
-      TM_FASTCALL int reserverange(int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int instrs, int reads, int writes)
+      TM_FASTCALL uintptr_t reserverange(uintptr_t addr0, uintptr_t addr1)
       {
 #if STATS_ACTIVE
           ++num_reserved_calls;
@@ -298,7 +317,22 @@ started = false;
           }
 #endif
 #if RESERVES_ACTIVE
-          return tmreserverange(this, bitmask, addr0, addr1, size, instrs, reads, writes);
+          return tmreserverange(this, addr0, addr1);
+#endif
+      }
+
+      TM_FASTCALL int releaserange(uintptr_t addr0, uintptr_t addr1)
+      {
+#if STATS_ACTIVE
+          ++num_reserved_calls;
+          if (bitmask & (1 << 0)) {
+              reserveWrite((void*)addr0);
+          } else {
+              reserveRead((void*)addr0);
+          }
+#endif
+#if RESERVES_ACTIVE
+          return tmreleaserange(this, addr0, addr1);
 #endif
       }
 
@@ -422,7 +456,8 @@ started = false;
       }
 
       void setReserve(
-	  TM_FASTCALL int(*reserverange)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int instrs, int reads, int writes),
+	  TM_FASTCALL uintptr_t(*reserverange)(TxThread* tx, uintptr_t addr0, uintptr_t addr1),
+	  TM_FASTCALL int(*releaserange)(TxThread* tx, uintptr_t addr0, uintptr_t addr1),
 	  TM_FASTCALL int(*reserve01)(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes),
 	  TM_FASTCALL int(*reserve02)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes),
 	  TM_FASTCALL int(*reserve03)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes),
@@ -433,6 +468,7 @@ started = false;
 	  TM_FASTCALL int(*reserveclear)(TxThread* tx))
       {
 	tmreserverange = reserverange;
+	tmreleaserange = releaserange;
 	tmreserve01 = reserve01;
 	tmreserve02 = reserve02;
 	tmreserve03 = reserve03;

@@ -62,7 +62,7 @@ namespace {
   inline void unset_irrevocable_barriers(TxThread& tx)
   {
       tx.setReadWriteCommit(stms[curr_policy.ALG_ID].read, stms[curr_policy.ALG_ID].write, stms[curr_policy.ALG_ID].commit);
-      tx.setReserve(stms[curr_policy.ALG_ID].reserverange, stms[curr_policy.ALG_ID].reserve01, stms[curr_policy.ALG_ID].reserve02, stms[curr_policy.ALG_ID].reserve03, stms[curr_policy.ALG_ID].reserve04, stms[curr_policy.ALG_ID].reserve05, stms[curr_policy.ALG_ID].reserve06, stms[curr_policy.ALG_ID].reserve07, stms[curr_policy.ALG_ID].reserveclear);
+      tx.setReserve(stms[curr_policy.ALG_ID].reserverange, stms[curr_policy.ALG_ID].releaserange, stms[curr_policy.ALG_ID].reserve01, stms[curr_policy.ALG_ID].reserve02, stms[curr_policy.ALG_ID].reserve03, stms[curr_policy.ALG_ID].reserve04, stms[curr_policy.ALG_ID].reserve05, stms[curr_policy.ALG_ID].reserve06, stms[curr_policy.ALG_ID].reserve07, stms[curr_policy.ALG_ID].reserveclear);
       tx.tmrollback       = stms[curr_policy.ALG_ID].rollback;
       TxThread::tmirrevoc = stms[curr_policy.ALG_ID].irrevoc;
       tx.tmabort          = old_abort_handler;
@@ -89,7 +89,7 @@ namespace {
   inline void set_irrevocable_barriers(TxThread& tx)
   {
       tx.setReadWriteCommit(stms[CGL].read, stms[CGL].write, commit_irrevocable);
-      tx.setReserve(stms[CGL].reserverange, stms[CGL].reserve01, stms[CGL].reserve02, stms[CGL].reserve03, stms[CGL].reserve04, stms[CGL].reserve05, stms[CGL].reserve06, stms[CGL].reserve07, stms[CGL].reserveclear);
+      tx.setReserve(stms[CGL].reserverange, stms[CGL].releaserange, stms[CGL].reserve01, stms[CGL].reserve02, stms[CGL].reserve03, stms[CGL].reserve04, stms[CGL].reserve05, stms[CGL].reserve06, stms[CGL].reserve07, stms[CGL].reserveclear);
       tx.tmrollback       = rollback_irrevocable;
       TxThread::tmirrevoc = stms[CGL].irrevoc;
       old_abort_handler   = tx.tmabort;

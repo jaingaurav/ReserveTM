@@ -97,7 +97,9 @@ namespace stm
   struct bytelock_t
   {
       volatile uint64_t      owner;
-      volatile unsigned char reader[(CACHELINE_BYTES*2) - sizeof(uint64_t)];
+      volatile uint64_t      count[64];
+      volatile unsigned char reader[64];
+      unsigned char padding[(CACHELINE_BYTES) - (sizeof(uint64_t))];
 
       /**
        *  Setting the read byte is platform-specific, so we make it a method
@@ -107,6 +109,30 @@ namespace stm
        *      but not visible globally
        */
       void set_read_byte(uint32_t id);
+      void incr_reserve_byte(uint32_t id);
+      uint32_t decr_reserve_byte(uint32_t id);
+      bool has_count(uint32_t id);
+      uint32_t release_ownership();
+      bool set_dep(uint32_t id, uint32_t dep);
+  };
+
+  struct cacheline_int_t
+  {
+    //volatile uint64_t value;
+    //unsigned char padding[(CACHELINE_BYTES*2) - sizeof(uint64_t)];
+
+  };
+  struct seqlock_t 
+  {
+    volatile uint64_t value;
+    unsigned char padding[(CACHELINE_BYTES*2) - sizeof(uint64_t)];
+  };
+
+  struct dependency_t
+  {
+    //volatile cacheline_int_t dependency[64];
+    volatile uint64_t value;
+    unsigned char padding[(CACHELINE_BYTES*2) - sizeof(uint64_t)];
   };
 
   /**

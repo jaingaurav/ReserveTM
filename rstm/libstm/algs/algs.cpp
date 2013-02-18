@@ -49,6 +49,8 @@ namespace stm
 
   /*** the table of bytelocks */
   bytelock_t bytelocks[NUM_STRIPES] = {{0}};
+  seqlock_t     seqlock = {0};
+  dependency_t  dependencies[64];         // set of bytelocks
 
   /*** the table of bitlocks */
   bitlock_t bitlocks[NUM_STRIPES] = {{0}};

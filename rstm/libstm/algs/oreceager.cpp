@@ -74,7 +74,7 @@ namespace {
 
   TM_FASTCALL void* read(STM_READ_SIG(,,));
   TM_FASTCALL void write(STM_WRITE_SIG(,,,));
-  static TM_FASTCALL int reserverange(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int instrs, int reads, int writes);
+  //static TM_FASTCALL int reserverange(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int instrs, int reads, int writes);
   static TM_FASTCALL int reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes);
   static TM_FASTCALL int reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes);
   static TM_FASTCALL int reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes);
@@ -101,7 +101,7 @@ namespace {
 
       stm::stms[id].read      = read;
       stm::stms[id].write     = write;
-      stm::stms[id].reserverange = reserverange;
+      //stm::stms[id].reserverange = reserverange;
       stm::stms[id].reserve01 = reserve01;
       stm::stms[id].reserve02 = reserve02;
       stm::stms[id].reserve03 = reserve03;
@@ -320,7 +320,7 @@ namespace {
     //tx->setReadWriteCommit(read_ro, write_ro, commit_ro);
     return 1;
   }
-
+/*
   int
     reserverange(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int instrs, int reads, int writes)
     {
@@ -343,7 +343,7 @@ namespace {
 
       return 0;
     }
-
+*/
   int
     reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes)
     {

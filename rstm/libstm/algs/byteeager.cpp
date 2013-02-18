@@ -28,7 +28,29 @@ using stm::get_bytelock_elem;
 using stm::get_bytelock_index;
 using stm::UndoLogEntry;
 
+#define TICKETS
+
 #define STATS
+
+#define RESERVE_ADDR(n, m) \
+      write = bitmask & n; \
+      index = get_bytelock_index((void **)m); \
+      if (reserve(tx, write, index, numAddrs, upcomingInstructions, id)) { \
+        if (tx->seq_num) { \
+          tx->num_saved_log_entries += num_entries; \
+          tx->tmabort(tx); \
+        } else { \
+          exp_backoff(tx); \
+          continue; \
+        } \
+      } \
+      if (write) { \
+        ++num_entries; \
+      }
+
+#define LOG_ADDR(n, m) \
+      if (bitmask & n) \
+        tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY((void **)m, *((void **)m), mask)));
 
 /**
  *  Declare the functions that we're going to implement, so that we can avoid
@@ -44,8 +66,10 @@ namespace {
     static TM_FASTCALL void write_rw(STM_WRITE_SIG(,,,));
     static TM_FASTCALL void commit_ro(STM_COMMIT_SIG(,));
     static TM_FASTCALL void commit_rw(STM_COMMIT_SIG(,));
+    static TM_FASTCALL int reserve_int(TxThread* tx, bool write, uintptr_t elem, int numAddrs, int upcomingInstructions, int id);
     static TM_FASTCALL int reserve(TxThread* tx, bool write, uintptr_t elem, int numAddrs, int upcomingInstructions, int id);
-    static TM_FASTCALL int reserverange(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int numAddrs, int upcomingInstructions, int id);
+    static TM_FASTCALL uintptr_t reserverange(TxThread* tx, uintptr_t addr0, uintptr_t addr1);
+    static TM_FASTCALL int releaserange(TxThread* tx, uintptr_t addr0, uintptr_t addr1);
     static TM_FASTCALL int reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int numAddrs, int upcomingInstructions, int id);
     static TM_FASTCALL int reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int numAddrs, int upcomingInstructions, int id);
     static TM_FASTCALL int reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int numAddrs, int upcomingInstructions, int id);
@@ -56,7 +80,7 @@ namespace {
     static TM_FASTCALL int reserveclear(TxThread* tx);
 
 
-    static void logAbort(TxThread* tx, bool write, int type);
+    static void logAbort(TxThread* tx, bool write, bool range, int type);
     static stm::scope_t* rollback(STM_ROLLBACK_SIG(,,,));
     static bool irrevoc(STM_IRREVOC_SIG(,));
     static void onSwitchTo();
@@ -81,12 +105,17 @@ namespace {
   bool ByteEager::begin(TxThread* tx)
   {
     tx->started = true;
+    tx->have_ticket = false;
+    tx->partial_reserve = false;
+    ++tx->tx_num;
     tx->seq_num = 0;
+    tx->next_id = 0;
+    assert(tx->range_bytelocks.size() == 0);
     tx->allocator.onTxBegin();
     return false;
   }
 
-  void ByteEager::logAbort(TxThread* tx, bool write, int type)
+  void ByteEager::logAbort(TxThread* tx, bool write, bool range, int type)
   {
     int index = 6;
     if (tx->seq_num < 2) {
@@ -102,10 +131,15 @@ namespace {
     } else if (tx->seq_num < 64) {
       index = 5;
     }
-    if (write)
-      ++tx->seq_num_w[index];
-    else
+    if (write) {
+      if (range) {
+        ++tx->seq_num_range[index];
+      } else {
+        ++tx->seq_num_w[index];
+      }
+    } else {
       ++tx->seq_num_r[index];
+    }
 
     switch (type) {
       case 1:
@@ -126,11 +160,14 @@ namespace {
    */
   void ByteEager::commit_ro(STM_COMMIT_SIG(tx,))
   {
+    assert(!tx->have_ticket);
+    
     // read-only... release read locks
     foreach (ByteLockList, i, tx->r_bytelocks)
       (*i)->reader[tx->id-1] = 0;
 
     tx->r_bytelocks.reset();
+    tx->have_ticket = false;
 #ifdef ALG_STATS
     tx->just_logged = 0;
 #endif
@@ -142,16 +179,28 @@ namespace {
    */
   void ByteEager::commit_rw(STM_COMMIT_SIG(tx,))
   {
+    if (tx->have_ticket)
+      assert(tx->w_bytelocks.size() == 0);
     // release write locks, then read locks
-    foreach (ByteLockList, i, tx->w_bytelocks)
-      (*i)->owner = 0;
+    foreach (ByteLockList, i, tx->range_bytelocks) {
+      assert((*i)->owner == tx->id);
+      if ((*i)->release_ownership()) {
+        ++tx->range_dep_transfers;
+      }
+    }
+    foreach (ByteLockList, i, tx->w_bytelocks) {
+      if((*i)->owner == tx->id)
+        (*i)->owner = 0;
+    }
     foreach (ByteLockList, i, tx->r_bytelocks)
       (*i)->reader[tx->id-1] = 0;
 
     // clean-up
     tx->r_bytelocks.reset();
     tx->w_bytelocks.reset();
+    tx->range_bytelocks.reset();
     tx->undo_log.reset();
+    tx->have_ticket = false;
     OnReadWriteCommit(tx, read_ro, write_ro, commit_ro);
 #ifdef ALG_STATS
     if (tx->just_logged)
@@ -233,6 +282,7 @@ namespace {
    */
   void ByteEager::write_ro(STM_WRITE_SIG(tx,addr,val,mask))
   {
+    assert(!tx->have_ticket && !tx->partial_reserve);
     uint32_t tries = 0;
     bytelock_t* lock = get_bytelock(addr);
 
@@ -267,6 +317,7 @@ namespace {
    */
   void ByteEager::write_rw(STM_WRITE_SIG(tx,addr,val,mask))
   {
+    assert(!tx->have_ticket && !tx->partial_reserve);
     uint32_t tries = 0;
     bytelock_t* lock = get_bytelock(addr);
 
@@ -303,9 +354,11 @@ namespace {
 
   int ByteEager::reserveclear(TxThread* tx)
   {
+    assert(false);
     // release write locks, then read locks
     foreach (ByteLockList, i, tx->w_bytelocks)
-      (*i)->owner = 0;
+      if ((*i)->owner == tx->id)
+        (*i)->owner = 0;
     foreach (ByteLockList, i, tx->r_bytelocks)
       (*i)->reader[tx->id-1] = 0;
 
@@ -316,7 +369,7 @@ namespace {
     return 0;
   }
 
-  int ByteEager::reserve(TxThread* tx, bool write, uintptr_t index, int numAddrs, int upcomingInstructions, int id)
+  int ByteEager::reserve_int(TxThread* tx, bool write, uintptr_t index, int numAddrs, int upcomingInstructions, int id)
   {
 #if 0
     bool over = false;
@@ -345,6 +398,16 @@ namespace {
         return 0;
       }
 
+      if (lock->has_count(tx->id)) {
+        ++tx->range_dep_waits;
+        while (lock->owner != tx->id) {
+          ++tx->range_reserves_child_waits;
+        }
+        return 0;
+      }
+
+      assert(!tx->have_ticket && !tx->partial_reserve);
+
       // log this location
       tx->r_bytelocks.insert(lock);
 
@@ -358,13 +421,18 @@ namespace {
           return 0;
         }
 
+        if (lock->owner == tx->id) {
+          return 0;
+        }
+
         // drop read lock, wait (with timeout) for lock release
         lock->reader[tx->id-1] = 0;
         while (lock->owner != 0) {
           if (++tries > READ_TIMEOUT) {
-            //TODO: is this safe?
-            //lock->reader[tx->id-1] = 0;
-            //tx->r_bytelocks.reset();
+            uint64_t owner = lock->owner;
+            if (owner && lock->count[owner-1]) {
+              ++tx->range_reserve_stranger_aborts;
+            }
             return 1;
           }
         }
@@ -375,15 +443,31 @@ namespace {
         return 0;
       }
 
-      // get the write lock, with timeout
-      while (!bcas64(&(lock->owner), 0u, tx->id))
-        if (++tries > ACQUIRE_TIMEOUT) {
-          return 2;
+      if (lock->has_count(tx->id)) {
+        ++tx->range_dep_waits;
+        while (lock->owner != tx->id) {
+          ++tx->range_reserves_child_waits;
         }
+        return 0;
+      }
+
+      // get the write lock, with timeout
+      while (!bcas64(&(lock->owner), 0u, tx->id)) {
+        if (++tries > ACQUIRE_TIMEOUT) {
+          uint64_t owner = lock->owner;
+          if (owner && lock->count[owner-1]) {
+            ++tx->range_reserve_stranger_aborts;
+          }
+          return 2;
+        } 
+      }
+
+      assert(!tx->have_ticket && !tx->partial_reserve);
 
       // log the lock, drop any read locks I have
       unsigned long size = tx->w_bytelocks.insert(lock);
       lock->reader[tx->id-1] = 0;
+
 
       // wait (with timeout) for readers to drain out
       // (read 4 bytelocks at a time)
@@ -396,6 +480,10 @@ namespace {
             //lock->owner = 0;
             //lock->reader[tx->id-1] = 0;
             //tx->w_bytelocks.reset();
+            uint64_t owner = lock->owner;
+            if (owner && lock->count[owner-1]) {
+              ++tx->range_reserve_stranger_aborts;
+            }
             return 3;
           }
       }
@@ -415,20 +503,166 @@ namespace {
     return 0; 
   }
 
-  int ByteEager::reserverange(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int numAddrs, int upcomingInstructions, int id)
+  uintptr_t ByteEager::reserverange(TxThread* tx, uintptr_t addr0, uintptr_t addr1)
   {
-    uintptr_t addr = addr0;
-    int next = 2;
-    int prev = 1; 
-    do {
-      if (next != prev) {
-        reserve01(tx, bitmask, addr, numAddrs, upcomingInstructions, id);
-        prev  = addr >> 3;
+    assert(!tx->have_ticket);
+    ++tx->range_reserves;
+
+    // First range reservation needs to acquire all locks
+    for (uintptr_t addr = addr0; addr != addr1; addr += sizeof(void*)) {
+
+      uintptr_t index = get_bytelock_index((void **)addr);
+      /*if (index == stm::NUM_STRIPES) {
+        index = 0;
+        }*/
+
+      uint32_t tries = 0;
+      bytelock_t* lock = get_bytelock_elem(index);
+      if (addr != addr0) {
+        volatile uint32_t* lock_alias = (volatile uint32_t*)&lock->reader[0];
+        for (int i = 0; i < 16; ++i) {
+          if (lock_alias[i] != 0) {
+            ++tx->range_reserve_reader_aborts;
+            return addr;
+          }
+        }
+      } else {
+        tx->partial_reserve = true;
       }
-      addr += size;
-      next = addr >> 3;
-    } while (addr != addr1);
+
+      if (lock->owner == tx->id) {
+        if(!lock->has_count(tx->id)) {
+          tx->range_bytelocks.insert(lock);
+        }
+        lock->incr_reserve_byte(tx->id);
+        continue;
+      }
+
+      if (tx->next_id) {
+        while (lock->owner != tx->next_id) {}
+        if(!lock->has_count(tx->id)) {
+          tx->range_bytelocks.insert(lock);
+        }
+        lock->incr_reserve_byte(tx->id);
+        continue;
+      }
+
+      // get the write lock, with timeout
+      while (!bcas64(&(lock->owner), 0u, tx->id)) {
+        if (lock->owner == tx->id) {
+          break;
+        }
+
+        if (tx->next_id) {
+          if (lock->owner == tx->next_id) {
+            break;
+          } else {
+            ++tx->range_reserves_partial;
+            return addr;
+          }
+        } else {
+          uint32_t owner = lock->owner;
+          if (owner) {
+            if (lock->set_dep(owner, tx->id)) {
+              tx->next_id = owner;
+
+              ++tx->range_dep_reserves;
+              break;             
+            } else {
+              ++tx->range_dep_reserve_fails;
+              return addr;
+            }
+          }
+        }
+        /*
+           if (++tries > ACQUIRE_TIMEOUT) {
+           logAbort(tx, true, true, 2);
+           assert(false);
+           tx->tmabort(tx);
+           } 
+           */
+      }
+      lock->incr_reserve_byte(tx->id);
+
+      //assert((lock->owner == tx->id) || (tx->next_id && (lock->owner == tx->next_id)));
+
+      // log the lock, drop any read locks I have
+      tx->range_bytelocks.insert(lock);
+      lock->reader[tx->id-1] = 0;
+
+      if (lock->owner == tx->id) {
+        // wait (with timeout) for readers to drain out
+        // (read 4 bytelocks at a time)
+        volatile uint32_t* lock_alias = (volatile uint32_t*)&lock->reader[0];
+        for (int i = 0; i < 16; ++i) {
+          tries = 0;
+          while (lock_alias[i] != 0) {
+            ++tx->range_reserves_drain_waits;
+            //         return addr;
+            /*  
+                if (++tries > DRAIN_TIMEOUT) {
+                logAbort(tx, true, true, 3);
+                assert(false);
+                tx->tmabort(tx);
+                }
+                */
+          }
+        }
+      }
+    }
+
+    foreach (ByteLockList, i, tx->w_bytelocks) {
+      if (!(*i)->has_count(tx->id)) {
+        assert((*i)->owner == tx->id);
+        (*i)->owner = 0;
+      }  
+    }
+    foreach (ByteLockList, i, tx->r_bytelocks) {
+      if (!(*i)->has_count(tx->id)) {
+        (*i)->reader[tx->id-1] = 0;
+      }  
+    }
+    tx->r_bytelocks.reset();
+    tx->w_bytelocks.reset();
+    assert(tx->w_bytelocks.size() == 0);
+
+    tx->have_ticket = true;
+    return addr1;
+  }
+
+  int ByteEager::releaserange(TxThread* tx, uintptr_t addr0, uintptr_t addr1)
+  {
     return 0;
+  }
+
+  int ByteEager::reserve(TxThread* tx, bool write, uintptr_t index, int numAddrs, int upcomingInstructions, int id)
+  {
+    int type = reserve_int(tx, write, index, numAddrs, upcomingInstructions, id);
+    if (type) {
+      if (tx->seq_num) {
+#ifdef STATS
+        logAbort(tx, write, false, type);
+#endif
+        return type;
+      }
+
+      ++tx->num_first_aborts[numAddrs-1];
+      foreach (ByteLockList, i, tx->w_bytelocks)
+        if ((*i)->owner == tx->id)
+          (*i)->owner = 0;
+      foreach (ByteLockList, i, tx->r_bytelocks)
+        (*i)->reader[tx->id-1] = 0;
+
+      // reset lists
+      tx->r_bytelocks.reset();
+      tx->w_bytelocks.reset();
+      tx->undo_log.reset();
+
+      // randomized exponential backoff
+      // exp_backoff(tx);
+    }
+
+    return type;
   }
 
   int ByteEager::reserve01(TxThread* tx, int bitmask, uintptr_t addr0, int numAddrs, int upcomingInstructions, int id)
@@ -439,164 +673,177 @@ namespace {
         tx->tmabort(tx);
     }
 #endif
-    bool write = bitmask & 1;
-    uintptr_t index = get_bytelock_index((void **)addr0);
-    int type = 0;
-    while ((type = reserve(tx, write, index, numAddrs, upcomingInstructions, id))) {
-      if (tx->seq_num) {
-#ifdef STATS
-        logAbort(tx, write, type);
-#endif
-        tx->tmabort(tx);
-      }
+    bool write;
+    uintptr_t index;
+    int num_entries;
 
-      ++tx->num_first_aborts;
-      foreach (ByteLockList, i, tx->w_bytelocks)
-        (*i)->owner = 0;
-      foreach (ByteLockList, i, tx->r_bytelocks)
-        (*i)->reader[tx->id-1] = 0;
+    while (true) {
+      num_entries = 0;
 
-      // reset lists
-      tx->r_bytelocks.reset();
-      tx->w_bytelocks.reset();
-      tx->undo_log.reset();
+      RESERVE_ADDR(1, addr0);
 
-      // randomized exponential backoff
-      exp_backoff(tx);
+      ++tx->seq_num;
+
+      LOG_ADDR(1, addr0);
+
+      return 1;
     }
-
-    ++tx->seq_num;
-    if (write) {
-      if (upcomingInstructions) {
-        tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY((void **)addr0, *((void **)addr0), mask)));
-      }
-    }
-
-    return 1;
   }
 
   int ByteEager::reserve02(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int numAddrs, int upcomingInstructions, int id)
   {
-    if (addr0 == addr1) {
-      ++tx->num_dynamic_merges;
-      if (reserve01(tx, bitmask | (bitmask >> 1), addr0, numAddrs, upcomingInstructions, id)) {
-        if (numAddrs == 2) {
-          if (bitmask)
-            tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY((void **)addr0, *((void **)addr0), mask)));
-        }
-        return 1;
-      }
+    bool write;
+    uintptr_t index;
+    int num_entries;
+
+    while (true) {
+      num_entries = 0;
+
+      RESERVE_ADDR(1, addr0);
+      RESERVE_ADDR(2, addr1);
+
+      ++tx->seq_num;
+
+      LOG_ADDR(1, addr0);
+      LOG_ADDR(2, addr1);
+
+      return 1;
     }
-    else
-    {
-      if (reserve01(tx, bitmask, addr0, numAddrs, upcomingInstructions, id)) {
-        if (reserve01(tx, bitmask>>1, addr1, numAddrs, upcomingInstructions, id)) {
-          if (numAddrs == 2) {
-            if (bitmask & 1)
-              tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY((void **)addr0, *((void **)addr0), mask)));
-            if (bitmask & 2)
-              tx->undo_log.insert(UndoLogEntry(STM_UNDO_LOG_ENTRY((void **)addr1, *((void **)addr1), mask)));
-          }
-          return 1;
-        }
-      }
-    }
-    return 0;
   }
 
   int ByteEager::reserve03(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int numAddrs, int upcomingInstructions, int id)
   {
-    if (addr0 == addr1) {
-      ++tx->num_dynamic_merges;
-      if (bitmask & 1)
-        bitmask = (bitmask >> 1) | 1;
-      else
-        bitmask = (bitmask >> 1);
-      return reserve02(tx, bitmask, addr1, addr2, numAddrs, upcomingInstructions, id);
+    bool write;
+    uintptr_t index;
+    int num_entries;
+
+    while (true) {
+      num_entries = 0;
+
+      RESERVE_ADDR(1, addr0);
+      RESERVE_ADDR(2, addr1);
+      RESERVE_ADDR(4, addr2);
+
+      ++tx->seq_num;
+
+      LOG_ADDR(1, addr0);
+      LOG_ADDR(2, addr1);
+      LOG_ADDR(4, addr2);
+
+      return 1;
     }
-    else
-    {
-      if (reserve01(tx, bitmask, addr0, numAddrs, upcomingInstructions, id)) {
-        return reserve02(tx, bitmask>>1, addr1, addr2, numAddrs, upcomingInstructions, id);
-      }
-    }
-    return 0;
   }
 
   int ByteEager::reserve04(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, int numAddrs, int upcomingInstructions, int id)
   {
-    if (addr0 == addr1) {
-      ++tx->num_dynamic_merges;
-      if (bitmask & 1)
-        bitmask = (bitmask >> 1) | 1;
-      else
-        bitmask = (bitmask >> 1);
-      return reserve03(tx, bitmask, addr1, addr2, addr3, numAddrs, upcomingInstructions, id);
+    bool write;
+    uintptr_t index;
+    int num_entries;
+
+    while (true) {
+      num_entries = 0;
+
+      RESERVE_ADDR(1, addr0);
+      RESERVE_ADDR(2, addr1);
+      RESERVE_ADDR(4, addr2);
+      RESERVE_ADDR(8, addr3);
+
+      ++tx->seq_num;
+
+      LOG_ADDR(1, addr0);
+      LOG_ADDR(2, addr1);
+      LOG_ADDR(4, addr2);
+      LOG_ADDR(8, addr3);
+
+      return 1;
     }
-    else
-    {
-      if (reserve01(tx, bitmask, addr0, numAddrs, upcomingInstructions, id)) {
-        return reserve03(tx, bitmask>>1, addr1, addr2, addr3, numAddrs, upcomingInstructions, id);
-      }
-    }
-    return 0;
   }
 
   int ByteEager::reserve05(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, uintptr_t addr4, int numAddrs, int upcomingInstructions, int id)
   {
-    if (addr0 == addr1) {
-      ++tx->num_dynamic_merges;
-      if (bitmask & 1)
-        bitmask = (bitmask >> 1) | 1;
-      else
-        bitmask = (bitmask >> 1);
-      return reserve04(tx, bitmask, addr1, addr2, addr3, addr4, numAddrs, upcomingInstructions, id);
+    bool write;
+    uintptr_t index;
+    int num_entries;
+
+    while (true) {
+      num_entries = 0;
+
+      RESERVE_ADDR(1, addr0);
+      RESERVE_ADDR(2, addr1);
+      RESERVE_ADDR(4, addr2);
+      RESERVE_ADDR(8, addr3);
+      RESERVE_ADDR(16, addr4);
+
+      ++tx->seq_num;
+
+      LOG_ADDR(1, addr0);
+      LOG_ADDR(2, addr1);
+      LOG_ADDR(4, addr2);
+      LOG_ADDR(8, addr3);
+      LOG_ADDR(16, addr4);
+
+      return 1;
     }
-    else
-    {
-      if (reserve01(tx, bitmask, addr0, numAddrs, upcomingInstructions, id)) {
-        return reserve04(tx, bitmask>>1, addr1, addr2, addr3, addr4, numAddrs, upcomingInstructions, id);
-      }
-    }
-    return 0;
   }
 
   int ByteEager::reserve06(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, uintptr_t addr4, uintptr_t addr5, int numAddrs, int upcomingInstructions, int id)
   {
-    if (addr0 == addr1) {
-      ++tx->num_dynamic_merges;
-      if (bitmask & 1)
-        bitmask = (bitmask >> 1) | 1;
-      else
-        bitmask = (bitmask >> 1);
-      return reserve05(tx, bitmask, addr1, addr2, addr3, addr4, addr5, numAddrs, upcomingInstructions, id);
+    bool write;
+    uintptr_t index;
+    int num_entries;
+
+    while (true) {
+      num_entries = 0;
+
+      RESERVE_ADDR(1, addr0);
+      RESERVE_ADDR(2, addr1);
+      RESERVE_ADDR(4, addr2);
+      RESERVE_ADDR(8, addr3);
+      RESERVE_ADDR(16, addr4);
+      RESERVE_ADDR(32, addr5);
+
+      ++tx->seq_num;
+
+      LOG_ADDR(1, addr0);
+      LOG_ADDR(2, addr1);
+      LOG_ADDR(4, addr2);
+      LOG_ADDR(8, addr3);
+      LOG_ADDR(16, addr4);
+      LOG_ADDR(32, addr5);
+
+      return 1;
     }
-    else
-    {
-      if (reserve01(tx, bitmask, addr0, numAddrs, upcomingInstructions, id)) {
-        return reserve05(tx, bitmask>>1, addr1, addr2, addr3, addr4, addr5, numAddrs, upcomingInstructions, id);
-      }
-    }
-    return 0;
   }
 
   int ByteEager::reserve07(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, uintptr_t addr3, uintptr_t addr4, uintptr_t addr5, uintptr_t addr6, int numAddrs, int upcomingInstructions, int id)
   {
-    if (addr0 == addr1) {
-      ++tx->num_dynamic_merges;
-      if (bitmask & 1)
-        bitmask = (bitmask >> 1) | 1;
-      else
-        bitmask = (bitmask >> 1);
-      return reserve06(tx, bitmask, addr1, addr2, addr3, addr4, addr5, addr6, numAddrs, upcomingInstructions, id);
+    bool write;
+    uintptr_t index;
+    int num_entries;
+
+    while (true) {
+      num_entries = 0;
+
+      RESERVE_ADDR(1, addr0);
+      RESERVE_ADDR(2, addr1);
+      RESERVE_ADDR(4, addr2);
+      RESERVE_ADDR(8, addr3);
+      RESERVE_ADDR(16, addr4);
+      RESERVE_ADDR(32, addr5);
+      RESERVE_ADDR(64, addr6);
+
+      ++tx->seq_num;
+
+      LOG_ADDR(1, addr0);
+      LOG_ADDR(2, addr1);
+      LOG_ADDR(4, addr2);
+      LOG_ADDR(8, addr3);
+      LOG_ADDR(16, addr4);
+      LOG_ADDR(32, addr5);
+      LOG_ADDR(64, addr6);
+
+      return 1;
     }
-    else
-    {
-      if (reserve01(tx, bitmask, addr0, numAddrs, upcomingInstructions, id)) {
-        return reserve06(tx, bitmask>>1, addr1, addr2, addr3, addr4, addr5, addr6, numAddrs, upcomingInstructions, id);
-      }
-    }
-    return 0;
   }
 
   /**
@@ -604,6 +851,8 @@ namespace {
    */
   stm::scope_t* ByteEager::rollback(STM_ROLLBACK_SIG(tx, upper_stack_bound, except, len))
   {
+    assert(!tx->have_ticket);
+    assert(!tx->partial_reserve);
     PreRollback(tx);
 
     // Undo the writes, while at the same time watching out for the exception
@@ -612,7 +861,8 @@ namespace {
 
     // release write locks, then read locks
     foreach (ByteLockList, i, tx->w_bytelocks)
-      (*i)->owner = 0;
+      if ((*i)->owner == tx->id)
+        (*i)->owner = 0;
     foreach (ByteLockList, i, tx->r_bytelocks)
       (*i)->reader[tx->id-1] = 0;
 
@@ -620,6 +870,7 @@ namespace {
     tx->r_bytelocks.reset();
     tx->w_bytelocks.reset();
     tx->undo_log.reset();
+    tx->have_ticket = false;
 
     // randomized exponential backoff
     exp_backoff(tx);
@@ -658,6 +909,7 @@ namespace stm {
       stms[ByteEager].read      = ::ByteEager::read_ro;
       stms[ByteEager].write     = ::ByteEager::write_ro;
       stms[ByteEager].reserverange = ::ByteEager::reserverange;
+      stms[ByteEager].releaserange = ::ByteEager::releaserange;
       stms[ByteEager].reserve01 = ::ByteEager::reserve01;
       stms[ByteEager].reserve02 = ::ByteEager::reserve02;
       stms[ByteEager].reserve03 = ::ByteEager::reserve03;

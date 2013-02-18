@@ -97,7 +97,6 @@ STATISTIC(num_merge_aborts_from_definition,             "9.3.5  Merge aborts fro
 bool printAliasEliminate = false;
 bool compress = true;
 bool eliminate = false;
-bool strongIsolation = false;
 bool merge = false;
 bool singleWriter = true;
 bool fullInstrumentation = false;
@@ -433,6 +432,7 @@ namespace {
       && (func->getName().str().find("malloc") == std::string::npos)
       && (func->getName().str().find("_assert") == std::string::npos)
       && (func->getName().str().find("stmreserve") == std::string::npos)
+      && (func->getName().str().find("stmrelease") == std::string::npos)
       && (func->getName().str().find("pthread") == std::string::npos)) {
       return true;
     }

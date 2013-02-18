@@ -18,17 +18,18 @@
 #include "inst.hpp"
 
 #if 1
-extern "C" int stmreserverange(stm::TxThread* tx,
-  int bitmask,
+extern "C"  uintptr_t stmreserverange(stm::TxThread* tx,
   uintptr_t addr0,
-  uintptr_t addr1,
-  int size,
-  int instrs,
-  int reads,
-  int writes
-  )
+  uintptr_t addr1)
 {
-  return tx->reserverange(bitmask, addr0, addr1, size, instrs, reads, writes);
+  return tx->reserverange(addr0, addr1);
+}
+
+extern "C" void stmreleaserange(stm::TxThread* tx,
+  uintptr_t addr0,
+  uintptr_t addr1)
+{
+  tx->releaserange(addr0, addr1);
 }
 
 extern "C" void stmreserve01(stm::TxThread* tx,
@@ -174,7 +175,8 @@ namespace stm
    *  Constructor sets up the lists and vars
    */
   TxThread::TxThread()
-    : nesting_depth(0),
+    : next_id(0), ticket(0), tx_num(0), 
+nesting_depth(0),
     allocator(),
     num_commits(0), num_aborts(0), num_restarts(0),
     num_ro(0),
@@ -198,8 +200,19 @@ namespace stm
     just_logged(0),	
     num_skipped_undo_log_entries(0),
     num_dynamic_merges(0),
-    num_first_aborts(0),
+    num_saved_log_entries(0),
+    range_reserves(0),
+    range_reserves_partial(0),
+range_reserve_reader_aborts(0),
+range_reserves_drain_waits(0),
+range_reserves_child_waits(0),
+range_reserve_stranger_aborts(0),
+    range_dep_reserves(0),
+    range_dep_reserve_fails(0),
+    range_dep_waits(0),
+    range_dep_transfers(0),
     started(false),
+    have_ticket(false),
     scope(NULL),
     start_time(0), tmlHasLock(false), undo_log(64), vlist(64), writes(64),
     r_orecs(64), locks(64),
@@ -207,7 +220,7 @@ namespace stm
     rf((filter_t*)FILTER_ALLOC(sizeof(filter_t))),
     prio(0), consec_aborts(0), seed((unsigned long)&id), myRRecs(64),
     order(-1), alive(1),
-    r_bytelocks(64), w_bytelocks(64), r_bitlocks(64), w_bitlocks(64),
+    r_bytelocks(64), w_bytelocks(64), range_bytelocks(64), r_bitlocks(64), w_bitlocks(64),
     my_mcslock(new mcs_qnode_t()),
     cm_ts(INT_MAX),
     cf((filter_t*)FILTER_ALLOC(sizeof(filter_t))),
@@ -216,11 +229,13 @@ namespace stm
     {
       for (int i = 0; i < 7; ++i)
       {
+        num_first_aborts[i] = 0;
         num_read_aborts[i] = 0;
         num_acquire_aborts[i] = 0;
         num_drain_aborts[i] = 0;
         seq_num_r[i] = 0;
         seq_num_w[i] = 0;
+        seq_num_range[i] = 0;
       }
       // prevent new txns from starting.
       while (true) {
@@ -436,10 +451,16 @@ namespace stm
         << "; nsule: " << threads[i]->num_skippable_undo_log_entries
         << "; nsdule: " << threads[i]->num_skipped_undo_log_entries
         << "; dm: " << threads[i]->num_dynamic_merges << std::endl
-        << "======" << std::endl
         << "ABORTS" << std::endl
-        << "======" << std::endl
-        << "First aborts: " << threads[i]->num_first_aborts << std::endl
+        << "Saved log entries: " << threads[i]->num_saved_log_entries << std::endl
+        << "First aborts: "
+        << " [" << threads[i]->num_first_aborts[0]
+        << ", " << threads[i]->num_first_aborts[1]
+        << ", " << threads[i]->num_first_aborts[2]
+        << ", " << threads[i]->num_first_aborts[3]
+        << ", " << threads[i]->num_first_aborts[4]
+        << ", " << threads[i]->num_first_aborts[5]
+        << ", " << threads[i]->num_first_aborts[6] << "]" << std::endl
         << "Read aborts:"
         << " [" << threads[i]->num_read_aborts[0]
         << ", " << threads[i]->num_read_aborts[1]
@@ -479,7 +500,26 @@ namespace stm
         << ", " << threads[i]->seq_num_w[3]
         << ", " << threads[i]->seq_num_w[4]
         << ", " << threads[i]->seq_num_w[5]
-        << ", " << threads[i]->seq_num_w[6] << "]" << std::endl;
+        << ", " << threads[i]->seq_num_w[6] << "]" << std::endl
+        << "Aborts on range (write):"
+        << " [" << threads[i]->seq_num_range[0]
+        << ", " << threads[i]->seq_num_range[1]
+        << ", " << threads[i]->seq_num_range[2]
+        << ", " << threads[i]->seq_num_range[3]
+        << ", " << threads[i]->seq_num_range[4]
+        << ", " << threads[i]->seq_num_range[5]
+        << ", " << threads[i]->seq_num_range[6] << "]" << std::endl
+        << "RANGE RESERVES" << std::endl
+        << "#: " << threads[i]->range_reserves
+        << " # partial: " << threads[i]->range_reserves_partial
+        << " RdAbt: " << threads[i]->range_reserve_reader_aborts
+        << " DrWait: " << threads[i]->range_reserves_drain_waits
+        << " ChWait: " << threads[i]->range_reserves_child_waits
+        << " StrAbt: " << threads[i]->range_reserve_stranger_aborts
+        << " DepRSV: " << threads[i]->range_dep_reserves
+        << " DepRSVFail: " << threads[i]->range_dep_reserve_fails
+        << " DepWait: " << threads[i]->range_dep_waits
+        << " DepTrans: " << threads[i]->range_dep_transfers << std::endl;
       threads[i]->abort_hist.dump();
       rw_txns += threads[i]->num_commits;
       ro_txns += threads[i]->num_ro;

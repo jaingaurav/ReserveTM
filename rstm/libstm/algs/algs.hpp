@@ -78,6 +78,8 @@ namespace stm
   extern pad_word_t    prioTxCount;                    // # priority txns
   extern rrec_t        rrecs[RREC_COUNT];              // set of rrecs
   extern bytelock_t    bytelocks[NUM_STRIPES];         // set of bytelocks
+  extern seqlock_t     seqlock;
+  extern dependency_t  dependencies[64];         // set of bytelocks
   extern bitlock_t     bitlocks[NUM_STRIPES];          // set of bitlocks
   extern pad_word_t    timestamp_max;                  // max value of timestamp
   extern mcs_qnode_t*  mcslock;                        // for MCS
@@ -109,7 +111,8 @@ namespace stm
       void  (*TM_FASTCALL commit)(STM_COMMIT_SIG(,));
       void* (*TM_FASTCALL read)  (STM_READ_SIG(,,));
       void  (*TM_FASTCALL write) (STM_WRITE_SIG(,,,));
-      int  (*TM_FASTCALL reserverange)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int size, int instrs, int reads, int writes);
+      uintptr_t  (*TM_FASTCALL reserverange)(TxThread* tx, uintptr_t addr0, uintptr_t addr1);
+      int  (*TM_FASTCALL releaserange)(TxThread* tx, uintptr_t addr0, uintptr_t addr1);
       int  (*TM_FASTCALL reserve01)(TxThread* tx, int bitmask, uintptr_t addr0, int instrs, int reads, int writes);
       int  (*TM_FASTCALL reserve02)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, int instrs, int reads, int writes);
       int  (*TM_FASTCALL reserve03)(TxThread* tx, int bitmask, uintptr_t addr0, uintptr_t addr1, uintptr_t addr2, int instrs, int reads, int writes);
@@ -199,6 +202,62 @@ namespace stm
   {
       uintptr_t index = reinterpret_cast<uintptr_t>(addr);
       return (index>>3) % NUM_STRIPES;
+  }
+
+//#define DEPENDANT
+
+  TM_INLINE
+  inline void add_dependant(uint64_t parent, uint64_t dependant) {
+#ifdef DEPENDANT
+    __sync_add_and_fetch(&dependencies[parent].value, 1 << dependant);
+    //dependencies[parent].dependency[dependant].value = 1;
+#endif
+  }
+
+  TM_INLINE
+  inline void clear_dependant(uint64_t parent, uint64_t dependant) {
+#ifdef DEPENDANT
+#if 1
+__sync_sub_and_fetch(&dependencies[parent].value, 1 << dependant);
+  //dependencies[id].value = 0;
+#else
+   dependencies[parent].dependency[dependant].value = 0;
+#endif
+#endif
+  }
+  TM_INLINE
+  inline void clear_dependants(uint64_t id) {
+#ifdef DEPENDANT
+#if 1
+  while (dependencies[id].value) { }
+  //dependencies[id].value = 0;
+#else
+          for (int i = 0; i < 64; ++i) {
+            if (dependencies[id].dependency[i].value) {
+            dependencies[id].dependency[i].value = 0;
+            }
+          }
+#endif
+#endif
+  }
+
+  TM_INLINE
+  inline bool has_dependant(uint64_t id) {
+//#ifdef DEPENDANT
+#if 1
+#if 1
+  return dependencies[id].value;
+#else
+         for (int i = 0; i < 64; ++i) {
+            if (dependencies[id].dependency[i].value) {
+              return true;
+            }
+          }
+          return false;
+#endif
+#else
+    return true;
+#endif
   }
 
   /**
@@ -401,6 +460,55 @@ namespace stm
 #endif
   }
 
+  inline void bytelock_t::incr_reserve_byte(uint32_t id)
+  {
+      __sync_fetch_and_add(&count[id-1], 1);
+  }
+
+  inline uint32_t bytelock_t::decr_reserve_byte(uint32_t id)
+  {
+      uint64_t val = __sync_sub_and_fetch(&count[id-1], 1);
+      return val >> 32;
+  }
+
+  inline bool bytelock_t::has_count(uint32_t id)
+  {
+      return count[id-1] != 0;
+  }
+  
+  inline uint32_t bytelock_t::release_ownership()
+  {
+    uint64_t old_val = __sync_lock_test_and_set(&count[owner-1], 0);
+    uint64_t new_owner = old_val >> 32;
+    if (new_owner == 0) {
+    for (int i = 0; i < 64; ++i) {
+      assert(count[i] == 0);
+    }
+}
+
+owner = new_owner;
+    return new_owner;
+  }
+
+  inline bool bytelock_t::set_dep(uint32_t id, uint32_t dep) {
+    uint64_t old_count;
+    uint64_t new_count;
+    do {
+    old_count = count[id-1];
+    if (old_count >> 32) {
+      return false;
+    }
+
+    if (old_count == 0) {
+      return false;
+    }
+
+    new_count = uint64_t(dep) << 32;
+    new_count += old_count;
+    } while (!__sync_bool_compare_and_swap(&count[id-1], old_count, new_count));
+    return true;
+  }
+  
   /*** set a bit */
   inline void rrec_t::setbit(unsigned slot)
   {
